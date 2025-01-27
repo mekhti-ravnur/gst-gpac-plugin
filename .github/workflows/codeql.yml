@@ -45,13 +45,12 @@ jobs:
       - if: matrix.build-mode == 'manual'
         name: Install GPAC
         shell: bash
+        working-directory: ${{ runner.temp }}
         run: |
           git clone --depth 1 https://github.com/gpac/gpac.git
           cd gpac
-          ./configure
-          make -j
+          ./configure && make -j
           sudo make install
-          cd .. && rm -rf gpac
 
         # This step builds the project.
       - if: matrix.build-mode == 'manual'
