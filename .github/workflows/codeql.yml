@@ -1,0 +1,68 @@
+name: "CodeQL Advanced"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "26 4 * * 4"
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # required for all workflows
+      security-events: write
+
+      # required to fetch internal or private CodeQL packs
+      packages: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: c-cpp
+            build-mode: manual
+          - language: actions
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+        # These steps install the dependencies needed for the build
+      - if: matrix.build-mode == 'manual'
+        name: Install GStreamer
+        shell: bash
+        run: sudo apt-get install -y libgstreamer1.0-dev
+      - if: matrix.build-mode == 'manual'
+        name: Install GPAC
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/gpac/gpac.git
+          cd gpac
+          ./configure
+          make -j
+          sudo make install
+          cd .. && rm -rf gpac
+
+        # This step builds the project.
+      - if: matrix.build-mode == 'manual'
+        name: Build
+        shell: bash
+        run: |
+          cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build
+          cmake --build build -j
+
+        # This step performs the CodeQL analysis.
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "build", "-j"],
+      "problemMatcher": ["$gcc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "${command:python.interpreterPath}",
+      "args": ["./test_runner.py", "--backend", "gst", "--level", "detailed"],
+      "options": {
+        "cwd": "${workspaceFolder}/testsuite",
+        "env": {
+          "GST_DEBUG": "3",
+          "GST_PLUGIN_PATH": "${workspaceFolder}/build"
+        }
+      }
+    },
+    {
+      "label": "graph",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/graph2png.sh",
+      "args": ["${workspaceFolder}/graph"]
+    }
+  ]
+}
