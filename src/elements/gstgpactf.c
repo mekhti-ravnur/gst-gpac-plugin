@@ -594,11 +594,21 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
         GPAC_SESS_CTX(GPAC_CTX), GPAC_MEMIO_DIR_IN, gpac_tf->queue);
 
       // Open the session
-      gpac_return_val_if_fail(
-        gpac_session_open(GPAC_SESS_CTX(GPAC_CTX),
-                          params->is_single ? params->info->filter_name
-                                            : GPAC_PROP_CTX(GPAC_CTX)->graph),
-        GST_STATE_CHANGE_FAILURE);
+      gchar* graph = NULL;
+      if (params->is_single) {
+        if (params->info->default_options) {
+          graph = g_strdup_printf(
+            "%s:%s", params->info->filter_name, params->info->default_options);
+        } else {
+          graph = g_strdup(params->info->filter_name);
+        }
+      } else {
+        graph = g_strdup(GPAC_PROP_CTX(GPAC_CTX)->graph);
+      }
+
+      gpac_return_val_if_fail(gpac_session_open(GPAC_SESS_CTX(GPAC_CTX), graph),
+                              GST_STATE_CHANGE_FAILURE);
+      g_free(graph);
 
       // Create the memory output
       if (!GPAC_PROP_CTX(GPAC_CTX)->no_output) {

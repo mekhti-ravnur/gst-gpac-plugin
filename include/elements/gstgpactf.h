@@ -94,20 +94,23 @@ GST_ELEMENT_REGISTER_DECLARE(gpac_tf);
 /**
  * Subelements
  */
-#define GPAC_TF_SUBELEMENT(name, caps)                             \
-  { .filter_name = name,                                           \
-    .src_template = GST_STATIC_PAD_TEMPLATE(                       \
-      "src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS(caps)) }
+#define GPAC_TF_SUBELEMENT(name, caps, opts)                      \
+  { .filter_name = name,                                          \
+    .src_template = GST_STATIC_PAD_TEMPLATE(                      \
+      "src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS(caps)), \
+    .default_options = opts }
 
 typedef struct
 {
   const gchar* filter_name;
   // The pad template to constrain the element with
   GstStaticPadTemplate src_template;
+  // The default options to apply on the filter
+  const gchar* default_options;
 } subelement_info;
 
 static subelement_info subelements[] = {
-  GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS),
+  GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS, "cmfc:frag"),
 };
 
 /**

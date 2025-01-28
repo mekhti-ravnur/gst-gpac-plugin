@@ -71,7 +71,7 @@ gpac_session_run(GPAC_SessionContext* ctx);
     \return GF_OK if the session was opened successfully, an error code
 */
 GF_Err
-gpac_session_open(GPAC_SessionContext* ctx, const gchar* graph);
+gpac_session_open(GPAC_SessionContext* ctx, gchar* graph);
 
 /*! loads a gpac filter from a gpac filter session
     \param[in] ctx the session context to load the filter from

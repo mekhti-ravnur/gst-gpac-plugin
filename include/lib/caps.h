@@ -78,7 +78,7 @@
 
 #define QT_CAPS \
   "video/quicktime, " \
-  "variant=(string)apple"
+  "variant=(string)cmaf"
 // clang-format on
 
 typedef struct

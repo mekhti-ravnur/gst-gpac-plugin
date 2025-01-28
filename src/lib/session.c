@@ -146,7 +146,7 @@ gpac_session_run(GPAC_SessionContext* ctx)
 }
 
 GF_Err
-gpac_session_open(GPAC_SessionContext* ctx, const gchar* graph)
+gpac_session_open(GPAC_SessionContext* ctx, gchar* graph)
 {
   // Initialize the variables
   GF_Err e = GF_OK;
