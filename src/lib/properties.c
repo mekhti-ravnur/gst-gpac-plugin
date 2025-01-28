@@ -185,9 +185,11 @@ gpac_install_filter_properties(GObjectClass* gobject_class,
         SPEC_INSTALL(uint64, 0, G_MAXUINT64, 0);
         break;
       case GF_PROP_FLOAT:
+      case GF_PROP_FRACTION:
         SPEC_INSTALL(float, 0.0, G_MAXFLOAT, 0.0);
         break;
       case GF_PROP_DOUBLE:
+      case GF_PROP_FRACTION64:
         SPEC_INSTALL(double, 0.0, G_MAXDOUBLE, 0.0);
         break;
       case GF_PROP_BOOL:
@@ -246,6 +248,9 @@ gpac_set_property(GPAC_PropertyContext* ctx,
                   const GValue* value,
                   GParamSpec* pspec)
 {
+  if (g_param_value_defaults(pspec, value))
+    return TRUE;
+
   if (!ctx->properties)
     ctx->properties = gf_list_new();
 
@@ -279,11 +284,19 @@ gpac_set_property(GPAC_PropertyContext* ctx,
     if (!value_str)
       return TRUE;
 
+    // Convert snake case to kebab case
+    // GLib uses kebab case for command line arguments, so we have to convert it
+    // back to snake case
+    gchar* param = g_strdup(g_param_spec_get_name(pspec));
+    for (gchar* c = param; *c; c++)
+      if (*c == '-')
+        *c = '_';
+
     // Add the property to the list
-    gchar* property =
-      g_strdup_printf("--%s=%s", g_param_spec_get_name(pspec), value_str);
+    gchar* property = g_strdup_printf("--%s=%s", param, value_str);
     gf_list_add(ctx->properties, property);
     g_free(value_str);
+    g_free(param);
     return TRUE;
   } else {
     // Check if the property is visible and if it is simple
