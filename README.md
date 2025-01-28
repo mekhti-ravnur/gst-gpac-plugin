@@ -2,6 +2,8 @@
 
 This plugin provides elements that interface with the GPAC library, bringing advanced multimedia processing capabilities of GPAC to GStreamer pipelines.
 
+This plugin is dual-licensed AGPL or commercial. Contact [Motion Spell](https://www.motionspell.com/contact/) for more information.
+
 ## Elements
 
 ### `gpactf` element
@@ -40,4 +42,4 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## License
 
-This project is licensed under the AGPLv3 License. See the [LICENSE](LICENSE) file for details.
+This project is dual-licensed AGPL or commercial. Contact [Motion Spell](https://www.motionspell.com/contact/) for more information.
