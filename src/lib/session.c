@@ -97,7 +97,7 @@ gpac_session_init(GPAC_SessionContext* ctx)
 }
 
 gboolean
-gpac_session_close(GPAC_SessionContext* ctx)
+gpac_session_close(GPAC_SessionContext* ctx, gboolean print_stats)
 {
   if (ctx->session) {
     // Run the filter chain until the end
@@ -107,13 +107,15 @@ gpac_session_close(GPAC_SessionContext* ctx)
     gf_fs_stop(ctx->session);
 
     // Print session stats
-    gf_log_set_tools_levels("all@info", 1);
-    gf_fs_print_connections(ctx->session);
-    gf_fs_print_stats(ctx->session);
-    gf_log_set_tools_levels("all@warning", 1);
-    gf_fs_del(ctx->session);
+    if (print_stats) {
+      gf_log_set_tools_levels("all@info", 1);
+      gf_fs_print_connections(ctx->session);
+      gf_fs_print_stats(ctx->session);
+      gf_log_set_tools_levels("all@warning", 1);
+    }
 
     // Reset the session context
+    gf_fs_del(ctx->session);
     ctx->session = NULL;
     ctx->memin = NULL;
   }

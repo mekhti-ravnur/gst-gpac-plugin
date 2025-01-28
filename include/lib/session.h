@@ -44,10 +44,11 @@ gpac_session_init(GPAC_SessionContext* ctx);
 
 /*! closes a gpac filter session
     \param[in] ctx the session context to close
+    \param[in] print_stats whether to print the session stats
     \return TRUE if the session was closed successfully, FALSE otherwise
 */
 gboolean
-gpac_session_close(GPAC_SessionContext* ctx);
+gpac_session_close(GPAC_SessionContext* ctx, gboolean print_stats);
 
 /*! flushes a gpac filter session
     \param[in] ctx the session context to flush

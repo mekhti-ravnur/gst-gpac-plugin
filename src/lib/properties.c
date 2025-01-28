@@ -85,6 +85,17 @@ gpac_install_local_properties(GObjectClass* gobject_class,
                               G_PARAM_READWRITE));
         break;
 
+      case GPAC_PROP_PRINT_STATS:
+        g_object_class_install_property(
+          gobject_class,
+          prop,
+          g_param_spec_boolean("print-stats",
+                               "Print Stats",
+                               "Print filter session stats after execution",
+                               FALSE,
+                               G_PARAM_READWRITE));
+        break;
+
       case GPAC_PROP_NO_OUTPUT:
         g_object_class_install_property(
           gobject_class,
@@ -244,6 +255,9 @@ gpac_set_property(GPAC_PropertyContext* ctx,
         g_free(ctx->graph);
         ctx->graph = g_value_dup_string(value);
         break;
+      case GPAC_PROP_PRINT_STATS:
+        ctx->print_stats = g_value_get_boolean(value);
+        break;
       case GPAC_PROP_NO_OUTPUT:
         ctx->no_output = g_value_get_boolean(value);
         break;
@@ -303,6 +317,9 @@ gpac_get_property(GPAC_PropertyContext* ctx,
     switch (property_id) {
       case GPAC_PROP_GRAPH:
         g_value_set_string(value, ctx->graph);
+        break;
+      case GPAC_PROP_PRINT_STATS:
+        g_value_set_boolean(value, ctx->print_stats);
         break;
       case GPAC_PROP_NO_OUTPUT:
         g_value_set_boolean(value, ctx->no_output);

@@ -165,7 +165,8 @@ gst_gpac_sink_class_init(GstGpacSinkClass* klass)
   gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_gpac_sink_get_property);
 
   // Configure the static properties
-  gpac_install_local_properties(gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_0);
+  gpac_install_local_properties(
+    gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_PRINT_STATS, GPAC_PROP_0);
   gpac_install_global_properties(gobject_class);
 
   // Set the metadata

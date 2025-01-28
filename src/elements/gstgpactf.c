@@ -632,8 +632,10 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
       gpac_memio_free(GPAC_SESS_CTX(GPAC_CTX));
 
       // Close the session
-      g_return_val_if_fail(gpac_session_close(GPAC_SESS_CTX(GPAC_CTX)),
-                           GST_STATE_CHANGE_FAILURE);
+      g_return_val_if_fail(
+        gpac_session_close(GPAC_SESS_CTX(GPAC_CTX),
+                           GPAC_PROP_CTX(GPAC_CTX)->print_stats),
+        GST_STATE_CHANGE_FAILURE);
       break;
 
     case GST_STATE_CHANGE_NULL_TO_NULL:
@@ -704,6 +706,8 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
   gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_gpac_tf_set_property);
   gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_gpac_tf_get_property);
   gpac_install_global_properties(gobject_class);
+  gpac_install_local_properties(
+    gobject_class, GPAC_PROP_PRINT_STATS, GPAC_PROP_0);
 
   // Add the subclass-specific properties and pad templates
   if (params->is_single) {
