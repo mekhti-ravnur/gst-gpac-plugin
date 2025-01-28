@@ -578,10 +578,7 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
 
       // Initialize the GPAC context
       g_return_val_if_fail(gpac_init(GPAC_CTX), GST_STATE_CHANGE_FAILURE);
-      break;
-    }
 
-    case GST_STATE_CHANGE_READY_TO_PAUSED: {
       // Create the session
       g_return_val_if_fail(gpac_session_init(GPAC_SESS_CTX(GPAC_CTX)),
                            GST_STATE_CHANGE_FAILURE);
@@ -636,8 +633,8 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
   ret = GST_ELEMENT_CLASS(parent_class)->change_state(element, transition);
 
   switch (transition) {
-    case GST_STATE_CHANGE_READY_TO_READY:
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
+    case GST_STATE_CHANGE_NULL_TO_NULL:
+    case GST_STATE_CHANGE_READY_TO_NULL:
       // Free the memory input
       gpac_memio_free(GPAC_SESS_CTX(GPAC_CTX));
 
@@ -646,10 +643,7 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
         gpac_session_close(GPAC_SESS_CTX(GPAC_CTX),
                            GPAC_PROP_CTX(GPAC_CTX)->print_stats),
         GST_STATE_CHANGE_FAILURE);
-      break;
 
-    case GST_STATE_CHANGE_NULL_TO_NULL:
-    case GST_STATE_CHANGE_READY_TO_NULL:
       // Destroy the GPAC context
       gpac_destroy(GPAC_CTX);
 
