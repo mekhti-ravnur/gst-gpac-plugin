@@ -139,8 +139,13 @@ gpac_memio_set_caps(GPAC_SessionContext* sess, GstCaps* caps)
     gf_filter_override_caps(sess->memout, current_caps, cur_nb_caps);
     return FALSE;
   }
-  // TODO: Trigger a reconfigure in case the pipeline is already running
-  // FIXME: In case the new caps are not valid, gracefully handle the error
+
+  // Reconnect the pipeline
+  u32 count = gf_fs_get_filters_count(sess->session);
+  for (u32 i = 0; i < count; i++) {
+    GF_Filter* filter = gf_fs_get_filter(sess->session, i);
+    gf_filter_reconnect_output(filter, NULL);
+  }
 
   return TRUE;
 }
