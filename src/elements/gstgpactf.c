@@ -296,14 +296,24 @@ gst_gpac_tf_sink_event(GstAggregator* agg,
     }
 
     case GST_EVENT_SEGMENT: {
-      if (priv->segment)
+      priv->segment_change_adj = 0;
+      if (priv->segment) {
+        priv->segment_change_adj -=
+          gst_segment_to_running_time(priv->segment, GST_FORMAT_TIME, 0);
         gst_segment_free(priv->segment);
+      }
 
       const GstSegment* segment;
       gst_event_parse_segment(event, &segment);
       priv->segment = gst_segment_copy(segment);
       priv->flags |= GPAC_PAD_SEGMENT_SET;
       priv->dts_offset_set = FALSE;
+
+      // Adjust the segment
+      if (priv->segment_change_adj)
+        priv->segment_change_adj +=
+          gst_segment_to_running_time(priv->segment, GST_FORMAT_TIME, 0);
+
       break;
     }
 

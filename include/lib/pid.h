@@ -58,6 +58,7 @@ typedef struct
 
   // State for the buffers
   gint64 dts_offset;
+  gint64 segment_change_adj;
   gboolean dts_offset_set;
   gboolean last_frame_was_keyframe;
 } GpacPadPrivate;
