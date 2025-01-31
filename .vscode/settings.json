@@ -1,6 +1,4 @@
 {
-  "python.terminal.activateEnvironment": true,
-  "python.defaultInterpreterPath": "./testsuite/.venv/bin/python",
   "[c]": {
     "editor.defaultFormatter": "xaver.clang-format"
   },

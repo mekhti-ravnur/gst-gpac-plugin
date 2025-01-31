@@ -15,10 +15,8 @@
     {
       "label": "test",
       "type": "shell",
-      "command": "${command:python.interpreterPath}",
-      "args": ["./test_runner.py", "--backend", "gst", "--level", "detailed"],
+      "command": "${workspaceFolder}/build/tests/gstgpacplugin_test",
       "options": {
-        "cwd": "${workspaceFolder}/testsuite",
         "env": {
           "GST_DEBUG": "3",
           "GST_PLUGIN_PATH": "${workspaceFolder}/build"

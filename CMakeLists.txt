@@ -1,5 +1,16 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 project(gpac_plugin VERSION 0.1.0 LANGUAGES C) # x-release-please-version
+
+# Options
+option(ENABLE_TESTS "Enable and build tests" OFF)
+
+# Set default build type to Release
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (e.g., Debug, Release)" FORCE)
+endif()
+
+# Define allowed values for CMAKE_BUILD_TYPE
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release)
 
 # Source
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -19,7 +30,6 @@ file(GLOB_RECURSE SOURCES
 
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
 target_compile_options(${PROJECT_NAME} PRIVATE
-  -g
   -Wall -Wextra -Werror
   -Wcast-align
   -Wno-unused-parameter
@@ -27,6 +37,14 @@ target_compile_options(${PROJECT_NAME} PRIVATE
   -Wno-missing-field-initializers
   -Wno-cast-function-type
 )
+
+if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+  message(STATUS "Building in Debug mode")
+  target_compile_options(${PROJECT_NAME} PRIVATE -g)
+else()
+  message(STATUS "Building in Release mode")
+  target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+endif()
 
 # GStreamer
 find_package(PkgConfig REQUIRED)
@@ -61,4 +79,9 @@ if(GST_LAUNCH_EXECUTABLE)
 
   # Define a custom target that uses this command
   add_custom_target(create_gst_link ALL DEPENDS ${CMAKE_BINARY_DIR}/gst-launch)
+endif()
+
+# Tests
+if(ENABLE_TESTS)
+  add_subdirectory(tests)
 endif()

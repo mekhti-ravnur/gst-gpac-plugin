@@ -212,6 +212,25 @@
         "targetArchitecture": "arm64",
         "internalConsoleOptions": "openOnSessionStart"
       }
+    },
+    {
+      "name": "Run tests",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/tests/gstgpacplugin_test",
+      "preLaunchTask": "build",
+      "cwd": "/tmp",
+      "environment": [
+        {
+          "name": "GST_PLUGIN_PATH",
+          "value": "${workspaceFolder}/build"
+        }
+      ],
+      "osx": {
+        "MIMode": "lldb",
+        "targetArchitecture": "arm64",
+        "internalConsoleOptions": "openOnSessionStart"
+      }
     }
   ]
 }
