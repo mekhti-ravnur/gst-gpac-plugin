@@ -65,14 +65,16 @@ gpac_pck_get_stream_time(GstClockTime time,
       unsigned_time = priv->dts_offset + unsigned_time;
     }
   } else if (is_negative) {
-    GST_WARNING("PTS -%lu is not valid, likely not related to current segment",
-                unsigned_time);
+    GST_WARNING("PTS %" GST_TIME_FORMAT
+                " is not valid, likely not related to current segment",
+                GST_TIME_ARGS(time));
   }
 
   return unsigned_time;
 
 fail:
-  GST_ERROR("Failed to convert time (%lu) to stream time", time);
+  GST_ERROR("Failed to convert time %" GST_TIME_FORMAT " to stream time",
+            GST_TIME_ARGS(time));
   return 0;
 }
 

@@ -131,6 +131,9 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
   if (!pck)
     return GF_OK;
 
+  // Declare variables
+  GstMemory* mem;
+
   // Get the data
   u32 size;
   const u8* data = gf_filter_pck_get_data(pck, &size);
@@ -141,14 +144,13 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
   // If we have leftover data, append it to the current buffer
   if (mp4mx_ctx->leftover) {
     guint32 leftover = MIN(mp4mx_ctx->leftover, size);
-    GstMemory* mem =
-      gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
-                             (gpointer)data,
-                             leftover,
-                             0,
-                             leftover,
-                             pck,
-                             (GDestroyNotify)gf_filter_pck_unref);
+    mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
+                                 (gpointer)data,
+                                 leftover,
+                                 0,
+                                 leftover,
+                                 pck,
+                                 (GDestroyNotify)gf_filter_pck_unref);
     gf_filter_pck_ref(&pck);
 
     // Append the memory to the buffer
@@ -163,21 +165,23 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 
   // Iterate over the boxes
   while (offset < size) {
-    guint32 box_size = GUINT32_FROM_BE(*(guint32*)(data + offset));
-    guint32 box_type = GUINT32_FROM_BE(*(guint32*)(data + offset + 4));
-    GST_WARNING("Box: %s, size: %u", gf_4cc_to_str(box_type), box_size);
+    guint32 box_size =
+      GUINT32_FROM_LE((data[offset] << 24) | (data[offset + 1] << 16) |
+                      (data[offset + 2] << 8) | data[offset + 3]);
+    guint32 box_type =
+      GUINT32_FROM_LE((data[offset + 4] << 24) | (data[offset + 5] << 16) |
+                      (data[offset + 6] << 8) | data[offset + 7]);
 
     // Special handling for mdat
     if (box_type == GF_ISOM_BOX_TYPE_MDAT) {
       // Create a new memory for the mdat header
-      GstMemory* mem =
-        gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
-                               (gpointer)data + offset,
-                               8,
-                               0,
-                               8,
-                               pck,
-                               (GDestroyNotify)gf_filter_pck_unref);
+      mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
+                                   (gpointer)data + offset,
+                                   8,
+                                   0,
+                                   8,
+                                   pck,
+                                   (GDestroyNotify)gf_filter_pck_unref);
       gf_filter_pck_ref(&pck);
 
       // Append the memory to the buffer
@@ -225,14 +229,13 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 
   append_memory:
     // Create a new memory
-    GstMemory* mem =
-      gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
-                             (gpointer)data + offset,
-                             box_size,
-                             0,
-                             box_size,
-                             pck,
-                             (GDestroyNotify)gf_filter_pck_unref);
+    mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
+                                 (gpointer)data + offset,
+                                 box_size,
+                                 0,
+                                 box_size,
+                                 pck,
+                                 (GDestroyNotify)gf_filter_pck_unref);
     gf_filter_pck_ref(&pck);
 
     // Append the memory to the buffer
