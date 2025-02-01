@@ -1,4 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
+
+if(APPLE)
+  find_program(GCC_PATH gcc PATHS /opt/homebrew/bin /usr/local/bin NO_DEFAULT_PATH)
+  find_program(GXX_PATH g++ PATHS /opt/homebrew/bin /usr/local/bin NO_DEFAULT_PATH)
+
+  if(GCC_PATH AND GXX_PATH)
+    set(CMAKE_C_COMPILER "${GCC_PATH}" CACHE STRING "C Compiler")
+    set(CMAKE_CXX_COMPILER "${GXX_PATH}" CACHE STRING "C++ Compiler")
+  endif()
+endif()
+
 project(gpac_plugin VERSION 0.1.0 LANGUAGES C) # x-release-please-version
 
 # Options

@@ -23,9 +23,9 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/gpac
-        key: gpac-${{ steps.gpac-commit.outputs.gpac-commit }}
+        key: gpac-${{ runner.os }}-${{ runner.arch }}-${{ steps.gpac-commit.outputs.gpac-commit }}
         restore-keys: |
-          gpac-
+          gpac-${{ runner.os }}-${{ runner.arch }}
 
     - name: Clone gpac
       if: steps.cache-gpac.outputs.cache-hit != 'true'
@@ -50,11 +50,24 @@ runs:
       shell: bash
       run: sudo make install
 
-    - name: Install GStreamer
+    - name: Install GStreamer on Linux
       shell: bash
+      if: runner.os == 'Linux'
       run: |
         sudo apt-get update
         sudo apt-get install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+    - name: Set up Homebrew
+      if: runner.os == 'macOS'
+      uses: Homebrew/actions/setup-homebrew@a3c8a0854142dbf3bade2bf77d5c26855a243034
+
+    - name: Install GStreamer on macOS
+      shell: bash
+      if: runner.os == 'macOS'
+      run: |
+        brew install gstreamer-development
+        echo "PKG_CONFIG_PATH=/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig:$(pkg-config --variable pc_path pkg-config)" >> $GITHUB_ENV
+        echo "PATH=/Library/Frameworks/GStreamer.framework/Versions/1.0/bin:$PATH" >> $GITHUB_ENV
 
     - name: Retrieve gst-plugins-rs HEAD commit
       if: inputs.for-test == 'true'
@@ -70,9 +83,9 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/gst-plugins-rs
-        key: gst-${{ steps.gst-commit.outputs.gst-commit }}
+        key: gst-${{ runner.os }}-${{ runner.arch }}-${{ steps.gst-commit.outputs.gst-commit }}
         restore-keys: |
-          gst-
+          gst-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Install Rust
       if: inputs.for-test == 'true' && steps.cache-gst.outputs.cache-hit != 'true'
@@ -105,5 +118,10 @@ runs:
       shell: bash
       working-directory: ${{ runner.temp }}/gst-plugins-rs
       run: |
-        mkdir -p $HOME/.local/share/gstreamer-1.0/plugins
-        cp bin/usr/local/lib/x86_64-linux-gnu/gstreamer-1.0/libgstfmp4.so $HOME/.local/share/gstreamer-1.0/plugins/
+        dst_dir=$HOME/.local/share/gstreamer-1.0/plugins
+        mkdir -p $dst_dir
+        if [[ ${{ runner.os }} == 'macOS' ]]; then
+          cp bin/usr/local/lib/gstreamer-1.0/libgstfmp4.dylib $dst_dir/
+        else
+          cp bin/usr/local/lib/x86_64-linux-gnu/gstreamer-1.0/libgstfmp4.so $dst_dir/
+        fi

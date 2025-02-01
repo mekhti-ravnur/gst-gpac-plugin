@@ -16,8 +16,12 @@ extract_box_fourccs(GstBuffer* buffer,
   guint32 offset = 0;
 
   while (offset < size) {
-    guint32 box_size = GUINT32_FROM_BE(*(guint32*)(data + offset));
-    guint32 box_type = GUINT32_FROM_LE(*(guint32*)(data + offset + 4));
+    guint32 box_size =
+      GUINT32_FROM_LE((data[offset] << 24) | (data[offset + 1] << 16) |
+                      (data[offset + 2] << 8) | data[offset + 3]);
+    guint32 box_type =
+      GUINT32_FROM_BE((data[offset + 4] << 24) | (data[offset + 5] << 16) |
+                      (data[offset + 6] << 8) | data[offset + 7]);
     fourcc_t fourcc = std::make_pair(box_type, box_size);
     fourccs.push_back(fourcc);
     offset += box_size;
@@ -222,11 +226,6 @@ TEST_F(GstTestFixture, TimingTest)
     for (guint idx = 0; idx < length; idx++) {
       GstBuffer* cmaf_buf = gst_buffer_list_get(cmaf_buffer, idx);
       GstBuffer* gpacmp4mx_buf = gst_buffer_list_get(gpacmp4mx_buffer, idx);
-
-      g_print("Buffer #%d CTS: %lu DTS: %lu\n",
-              idx,
-              GST_BUFFER_PTS(cmaf_buf),
-              GST_BUFFER_DTS(cmaf_buf));
 
       // Check the CTS and DTS
       EXPECT_EQ(GST_BUFFER_PTS(cmaf_buf), GST_BUFFER_PTS(gpacmp4mx_buf));

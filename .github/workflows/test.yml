@@ -10,7 +10,12 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13, macos-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,12 +26,12 @@ jobs:
           for-test: true
 
       - name: Install Ugly plugins (for x264enc)
+        if: ${{ runner.os == 'Linux' }}
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y gstreamer1.0-plugins-ugly
 
-      # This step builds the project.
       - name: Build
         shell: bash
         run: |
@@ -38,4 +43,5 @@ jobs:
         shell: bash
         env:
           GST_PLUGIN_PATH: ${{ github.workspace}}/build:$HOME/.local/share/gstreamer-1.0/plugins
+          GST_DEBUG: 3
         run: ./build/tests/gstgpacplugin_test

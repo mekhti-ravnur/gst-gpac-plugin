@@ -15,6 +15,7 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       major: ${{ steps.release.outputs.major }}
       minor: ${{ steps.release.outputs.minor }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Release Please
         uses: googleapis/release-please-action@7987652d64b4581673a76e33ad5e98e3dd56832f
@@ -44,3 +45,50 @@ jobs:
           git tag -a v${{ needs.release-please.outputs.major }}.${{ needs.release-please.outputs.minor }} -m "Release v${{ needs.release-please.outputs.major }}.${{ needs.release-please.outputs.minor }}"
           git push origin v${{ needs.release-please.outputs.major }}
           git push origin v${{ needs.release-please.outputs.major }}.${{ needs.release-please.outputs.minor }}
+
+  release:
+    name: Build and Release (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13, macos-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install gpac and GStreamer
+        uses: ./.github/actions/deps
+
+      - name: Build
+        shell: bash
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Release -B build
+          cmake --build build -j
+
+      - name: Rename Shared Library
+        id: rename
+        shell: bash
+        run: |
+          OS_NAME=""
+          ARCH="$(uname -m)"
+
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            OS_NAME="ubuntu_$(lsb_release -rs)"
+            EXT="so"
+          else
+            OS_NAME="macos_$(sw_vers -productVersion | cut -d '.' -f1,2)"
+            EXT="dylib"
+          fi
+
+          NEW_NAME="libgpac_plugin_${OS_NAME}_${ARCH}.${EXT}"
+          mv ./build/libgpac_plugin.${EXT} "./build/${NEW_NAME}"
+          echo "artifact=${NEW_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Upload Release Artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ needs.release-please.outputs.tag_name }} ./build/${{ steps.rename.outputs.artifact }} --clobber
