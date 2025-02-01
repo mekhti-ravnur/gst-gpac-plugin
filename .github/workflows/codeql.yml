@@ -38,22 +38,9 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
 
       # These steps install the dependencies needed for the build
-      - name: Install GPAC
+      - name: Install gpac and GStreamer
         if: matrix.language == 'c-cpp'
-        shell: bash
-        working-directory: ${{ runner.temp }}
-        run: |
-          git clone --depth 1 https://github.com/gpac/gpac.git
-          cd gpac
-          ./configure && make -j
-          sudo make install
-
-      - name: Install GStreamer
-        if: matrix.language == 'c-cpp'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgstreamer1.0-dev
+        uses: ./.github/actions/deps
 
       # This step builds the project.
       - name: Build

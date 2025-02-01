@@ -94,4 +94,7 @@ build/
 # Dot files
 graph/
 
+# GitHub Actions
+!.github/**/*
+
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,cmake,macos,linux
