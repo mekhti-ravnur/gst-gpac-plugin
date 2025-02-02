@@ -53,7 +53,7 @@ gpac_pck_get_stream_time(GstClockTime time,
   // DTS value
   gboolean is_negative = ret < 0;
   if (is_dts && is_negative && !priv->dts_offset_set) {
-    priv->dts_offset = unsigned_time + priv->segment_change_adj;
+    priv->dts_offset = unsigned_time;
     priv->dts_offset_set = TRUE;
   }
 

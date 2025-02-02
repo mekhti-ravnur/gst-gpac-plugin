@@ -45,15 +45,17 @@ typedef enum
 #define GPAC_FILTER_PP_IMPL_DECL(filter_name)                                 \
   void filter_name##_ctx_init(void** process_ctx);                            \
   void filter_name##_ctx_free(void* process_ctx);                             \
+  GF_Err filter_name##_configure_pid(GF_Filter* filter, GF_FilterPid* pid);   \
   GF_Err filter_name##_post_process(GF_Filter* filter, GF_FilterPacket* pck); \
   GPAC_FilterPPRet filter_name##_consume(GF_Filter* filter, void** outptr);
 
 #define GPAC_FILTER_PP_IMPL_DEFINE(filter_name) \
   { #filter_name,                               \
     filter_name##_ctx_init,                     \
+    filter_name##_ctx_free,                     \
+    filter_name##_configure_pid,                \
     filter_name##_post_process,                 \
-    filter_name##_consume,                      \
-    filter_name##_ctx_free }
+    filter_name##_consume }
 
 // Forward declarations
 GPAC_FILTER_PP_IMPL_DECL(generic);
@@ -65,9 +67,10 @@ typedef struct
 
   // Handlers
   void (*ctx_init)(void** process_ctx);
+  void (*ctx_free)(void* process_ctx);
+  GF_Err (*configure_pid)(GF_Filter* filter, GF_FilterPid* pid);
   GF_Err (*post_process)(GF_Filter* filter, GF_FilterPacket* pck);
   GPAC_FilterPPRet (*consume)(GF_Filter* filter, void** outptr);
-  void (*ctx_free)(void* process_ctx);
 } post_process_registry_entry;
 
 static post_process_registry_entry pp_registry[] = {

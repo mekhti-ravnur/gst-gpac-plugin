@@ -54,6 +54,12 @@ generic_ctx_free(void* process_ctx)
 }
 
 GF_Err
+generic_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
+{
+  return GF_OK;
+}
+
+GF_Err
 generic_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);

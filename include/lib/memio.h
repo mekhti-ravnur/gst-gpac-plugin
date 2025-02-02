@@ -46,6 +46,8 @@ typedef struct
   /*< memout-specific >*/
   GF_FilterPid* ipid;
   void* process_ctx;
+  guint64 global_offset;
+  gboolean is_continuous;
 } GPAC_MemIoContext;
 
 /*! the memory io filter process callback
@@ -102,3 +104,11 @@ gpac_memio_set_caps(GPAC_SessionContext* sess, GstCaps* caps);
 */
 GPAC_FilterPPRet
 gpac_memio_consume(GPAC_SessionContext* sess, void** outptr);
+
+/*! sets the global offset of the memory output filter
+    \param[in] sess the session context
+    \param[in] segment the segment to set the offset from
+*/
+void
+gpac_memio_set_global_offset(GPAC_SessionContext* sess,
+                             const GstSegment* segment);

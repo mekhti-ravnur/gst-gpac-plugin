@@ -60,8 +60,6 @@ typedef struct
   GstBuffer* buffer;
   gboolean is_complete;
   guint32 expected_size;
-  guint64 pts, dts;
-  guint32 duration;
 } BufferContents;
 
 typedef struct
@@ -75,8 +73,8 @@ typedef struct
   // Buffer contents for the init, header, and data
   BufferContents* contents[3];
 
-  // Global state
-  gboolean is_discontinuity;
+  // Input context
+  guint32 timescale;
 
   // Reader context
   guint64 offset;
@@ -93,7 +91,6 @@ mp4mx_ctx_init(void** process_ctx)
   // Initialize the context
   ctx->output_queue = g_queue_new();
   ctx->current_type = INIT;
-  ctx->is_discontinuity = TRUE;
 
   // Initialize the buffer contents
   for (guint i = 0; i < LAST; i++) {
@@ -121,6 +118,22 @@ mp4mx_ctx_free(void* process_ctx)
 
   // Free the context
   g_free(ctx);
+}
+
+GF_Err
+mp4mx_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
+{
+  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+
+  // Get the timescale from the PID
+  mp4mx_ctx->timescale = GST_SECOND;
+  const GF_PropertyValue* p =
+    gf_filter_pid_get_property(pid, GF_PROP_PID_TIMESCALE);
+  if (p)
+    mp4mx_ctx->timescale = p->value.uint;
+
+  return GF_OK;
 }
 
 GF_Err
@@ -246,9 +259,9 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
       // Set the flags
       switch (type) {
         case INIT:
-          if (mp4mx_ctx->is_discontinuity) {
+          if (!ctx->is_continuous) {
             GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DISCONT);
-            mp4mx_ctx->is_discontinuity = FALSE;
+            ctx->is_continuous = TRUE;
           }
           // fallthrough
         case HEADER:
@@ -263,10 +276,22 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
           break;
       }
 
-      // Set the times
-      GST_BUFFER_PTS(buf) = gf_filter_pck_get_cts(pck);
-      GST_BUFFER_DTS(buf) = gf_filter_pck_get_dts(pck);
-      GST_BUFFER_DURATION(buf) = gf_filter_pck_get_duration(pck);
+      // Calculate the PTS
+      guint64 pts = gf_timestamp_rescale(
+        gf_filter_pck_get_cts(pck), mp4mx_ctx->timescale, GST_SECOND);
+      pts += ctx->global_offset;
+      GST_BUFFER_PTS(buf) = pts;
+
+      // Calculate the DTS
+      guint64 dts = gf_timestamp_rescale(
+        gf_filter_pck_get_dts(pck), mp4mx_ctx->timescale, GST_SECOND);
+      dts += ctx->global_offset;
+      GST_BUFFER_DTS(buf) = dts;
+
+      // Calculate the duration
+      guint64 duration = gf_timestamp_rescale(
+        gf_filter_pck_get_duration(pck), mp4mx_ctx->timescale, GST_SECOND);
+      GST_BUFFER_DURATION(buf) = type == INIT ? GST_CLOCK_TIME_NONE : duration;
     }
 
     // Append the memory to the buffer
@@ -312,8 +337,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 
       // Init won't have timings set, set it using header
       GST_BUFFER_PTS(mp4mx_ctx->contents[INIT]->buffer) =
-        GST_BUFFER_PTS(mp4mx_ctx->contents[HEADER]->buffer) -
-        GST_BUFFER_DURATION(mp4mx_ctx->contents[HEADER]->buffer);
+        GST_BUFFER_PTS(mp4mx_ctx->contents[HEADER]->buffer);
       GST_BUFFER_DTS(mp4mx_ctx->contents[INIT]->buffer) =
         GST_BUFFER_DTS(mp4mx_ctx->contents[HEADER]->buffer) -
         GST_BUFFER_DURATION(mp4mx_ctx->contents[HEADER]->buffer);

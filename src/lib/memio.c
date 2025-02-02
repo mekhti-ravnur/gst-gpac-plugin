@@ -75,6 +75,7 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
   g_return_val_if_fail(rt_udta, GF_OUT_OF_MEM);
   gpac_return_if_fail(gf_filter_set_rt_udta(memio, rt_udta));
   rt_udta->dir = dir;
+  rt_udta->global_offset = GST_CLOCK_TIME_NONE;
 
   return e;
 }
@@ -172,6 +173,26 @@ gpac_memio_consume(GPAC_SessionContext* sess, void** outptr)
   return pp_entry->consume(sess->memout, outptr);
 }
 
+void
+gpac_memio_set_global_offset(GPAC_SessionContext* sess,
+                             const GstSegment* segment)
+{
+  if (!sess->memout)
+    return;
+
+  GPAC_MemIoContext* ctx = gf_filter_get_rt_udta(sess->memout);
+  g_return_if_fail(ctx);
+
+  // Get the segment offset
+  guint64 offset = segment->base + segment->start + segment->offset;
+  if (offset == GST_CLOCK_TIME_NONE)
+    return;
+  if (ctx->global_offset == GST_CLOCK_TIME_NONE || !ctx->is_continuous) {
+    ctx->global_offset = MIN(offset, ctx->global_offset);
+  } else if (ctx->global_offset > offset)
+    GST_WARNING("Cannot set a global offset smaller than the current one");
+}
+
 //////////////////////////////////////////////////////////////////////////
 // #MARK: Default Callbacks
 //////////////////////////////////////////////////////////////////////////
@@ -241,5 +262,6 @@ gpac_default_memout_configure_pid_cb(GF_Filter* filter,
     gpac_filter_get_post_process_registry_entry(source_name);
   pp_entry->ctx_init(&ctx->process_ctx);
 
-  return GF_OK;
+  // Configure the PID with the new post-process context
+  return pp_entry->configure_pid(filter, PID);
 }
