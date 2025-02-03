@@ -240,7 +240,7 @@ gpac_default_memout_process_cb(GF_Filter* filter)
 
 static GF_Err
 gpac_default_memout_configure_pid_cb(GF_Filter* filter,
-                                     GF_FilterPid* PID,
+                                     GF_FilterPid* pid,
                                      Bool is_remove)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
@@ -253,8 +253,14 @@ gpac_default_memout_configure_pid_cb(GF_Filter* filter,
     pp_entry->ctx_free(ctx->process_ctx);
   }
 
+  if (!ctx->ipid) {
+    GF_FilterEvent evt;
+    gf_filter_pid_init_play_event(pid, &evt, 0, 1, "MemOut");
+    gf_filter_pid_send_event(pid, &evt);
+  }
+
   // Set the new PID
-  ctx->ipid = PID;
+  ctx->ipid = pid;
 
   // Create a new post-process context
   const gchar* source_name = gf_filter_pid_get_filter_name(ctx->ipid);
@@ -263,5 +269,5 @@ gpac_default_memout_configure_pid_cb(GF_Filter* filter,
   pp_entry->ctx_init(&ctx->process_ctx);
 
   // Configure the PID with the new post-process context
-  return pp_entry->configure_pid(filter, PID);
+  return pp_entry->configure_pid(filter, pid);
 }

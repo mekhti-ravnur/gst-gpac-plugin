@@ -27,14 +27,19 @@
 #include "lib/memio.h"
 #include <gpac/internal/isomedia_dev.h>
 
+GST_DEBUG_CATEGORY_STATIC(gpac_mp4mx);
+#define GST_CAT_DEFAULT gpac_mp4mx
+
+#define GET_TYPE(type) mp4mx_ctx->contents[type]
+
 static guint32 INIT_BOXES[] = { GF_ISOM_BOX_TYPE_FTYP,
                                 GF_ISOM_BOX_TYPE_FREE,
                                 GF_ISOM_BOX_TYPE_MOOV,
                                 0 };
 static guint32 HEADER_BOXES[] = { GF_ISOM_BOX_TYPE_STYP,
                                   GF_ISOM_BOX_TYPE_MOOF,
-                                  GF_ISOM_BOX_TYPE_MDAT,
                                   0 };
+static guint32 DATA_BOXES[] = { GF_ISOM_BOX_TYPE_MDAT, 0 };
 
 typedef enum _BufferType
 {
@@ -52,15 +57,21 @@ struct BoxMapping
 } box_mapping[LAST] = {
   { INIT, INIT_BOXES },
   { HEADER, HEADER_BOXES },
-  { DATA, NULL },
+  { DATA, DATA_BOXES },
 };
 
 typedef struct
 {
   GstBuffer* buffer;
   gboolean is_complete;
-  guint32 expected_size;
 } BufferContents;
+
+typedef struct
+{
+  guint32 box_type;
+  guint32 box_size;
+  GstBuffer* buffer;
+} BoxInfo;
 
 typedef struct
 {
@@ -71,16 +82,14 @@ typedef struct
   BufferType current_type;
   guint32 segment_count;
 
+  // Box parser state
+  GQueue* box_queue;
+
   // Buffer contents for the init, header, and data
   BufferContents* contents[3];
 
   // Input context
   guint32 timescale;
-
-  // Reader context
-  guint64 offset;
-  guint64 size;
-  guint32 leftover;
 } Mp4mxCtx;
 
 void
@@ -89,9 +98,14 @@ mp4mx_ctx_init(void** process_ctx)
   *process_ctx = g_new0(Mp4mxCtx, 1);
   Mp4mxCtx* ctx = (Mp4mxCtx*)*process_ctx;
 
+  GST_DEBUG_CATEGORY_INIT(
+    gpac_mp4mx, "gpacmp4mx", 0, "GPAC mp4mx post-processor");
+
   // Initialize the context
   ctx->output_queue = g_queue_new();
   ctx->current_type = INIT;
+  ctx->segment_count = 0;
+  ctx->box_queue = g_queue_new();
 
   // Initialize the buffer contents
   for (guint i = 0; i < LAST; i++) {
@@ -109,6 +123,14 @@ mp4mx_ctx_free(void* process_ctx)
   while (!g_queue_is_empty(ctx->output_queue))
     gst_buffer_unref((GstBuffer*)g_queue_pop_head(ctx->output_queue));
   g_queue_free(ctx->output_queue);
+
+  // Free the box queue
+  while (!g_queue_is_empty(ctx->box_queue)) {
+    BoxInfo* buf = g_queue_pop_head(ctx->box_queue);
+    if (buf->buffer)
+      gst_buffer_unref(buf->buffer);
+  }
+  g_queue_free(ctx->box_queue);
 
   // Free the buffer contents
   for (guint i = 0; i < LAST; i++) {
@@ -137,6 +159,186 @@ mp4mx_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
   return GF_OK;
 }
 
+GstMemory*
+mp4mx_create_memory(const u8* data, guint32 size, GF_FilterPacket* pck)
+{
+  gf_filter_pck_ref(&pck);
+  return gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
+                                (gpointer)data,
+                                size,
+                                0,
+                                size,
+                                pck,
+                                (GDestroyNotify)gf_filter_pck_unref);
+}
+
+gboolean
+mp4mx_is_box_complete(BoxInfo* box)
+{
+  return box && box->buffer &&
+         gst_buffer_get_size(box->buffer) == box->box_size;
+}
+
+gboolean
+mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
+{
+  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+  BufferType type = mp4mx_ctx->current_type;
+
+  // Declare variables
+  gboolean need_more_data = FALSE;
+
+  // Get the data
+  u32 size;
+  const u8* data = gf_filter_pck_get_data(pck, &size);
+  GST_DEBUG("Processing data of size %" G_GUINT32_FORMAT, size);
+
+  guint32 offset = 0;
+  while (offset < size) {
+    BoxInfo* box = g_queue_peek_tail(mp4mx_ctx->box_queue);
+    if (!box || mp4mx_is_box_complete(box)) {
+      box = g_new0(BoxInfo, 1);
+      g_queue_push_tail(mp4mx_ctx->box_queue, box);
+    }
+
+    // If we have leftover data, append it to the current buffer
+    if (box->buffer && gst_buffer_get_size(box->buffer) != box->box_size) {
+      guint32 leftover =
+        MIN(box->box_size - gst_buffer_get_size(box->buffer), size - offset);
+      if (gst_buffer_get_size(box->buffer) > 0)
+        GST_DEBUG("Incomplete box %s, appending %" G_GUINT32_FORMAT " bytes",
+                  gf_4cc_to_str(box->box_type),
+                  leftover);
+      GstMemory* mem = mp4mx_create_memory(data + offset, leftover, pck);
+
+      // Append the memory to the buffer
+      gst_buffer_append_memory(box->buffer, mem);
+
+      // Update the offset
+      offset += leftover;
+      GST_DEBUG("Wrote %" G_GSIZE_FORMAT " bytes of %" G_GUINT32_FORMAT
+                " for box %s",
+                gst_buffer_get_size(box->buffer),
+                box->box_size,
+                gf_4cc_to_str(box->box_type));
+      continue;
+    }
+
+    // Parse the box header
+    box->box_size =
+      GUINT32_FROM_LE((data[offset] << 24) | (data[offset + 1] << 16) |
+                      (data[offset + 2] << 8) | data[offset + 3]);
+    box->box_type =
+      GUINT32_FROM_LE((data[offset + 4] << 24) | (data[offset + 5] << 16) |
+                      (data[offset + 6] << 8) | data[offset + 7]);
+    GST_DEBUG("Saw box %s with size %" G_GUINT32_FORMAT,
+              gf_4cc_to_str(box->box_type),
+              box->box_size);
+
+    // Create a new buffer
+    box->buffer = gst_buffer_new();
+
+    // Calculate the PTS
+    if (gf_filter_pck_get_cts(pck) != GF_FILTER_NO_TS) {
+      guint64 pts = gf_timestamp_rescale(
+        gf_filter_pck_get_cts(pck), mp4mx_ctx->timescale, GST_SECOND);
+      pts += ctx->global_offset;
+      GST_BUFFER_PTS(box->buffer) = pts;
+    }
+
+    // Calculate the DTS
+    if (gf_filter_pck_get_dts(pck) != GF_FILTER_NO_TS) {
+      guint64 dts = gf_timestamp_rescale(
+        gf_filter_pck_get_dts(pck), mp4mx_ctx->timescale, GST_SECOND);
+      dts += ctx->global_offset;
+      GST_BUFFER_DTS(box->buffer) = dts;
+    }
+
+    // Calculate the duration
+    guint64 duration = gf_timestamp_rescale(
+      gf_filter_pck_get_duration(pck), mp4mx_ctx->timescale, GST_SECOND);
+    GST_BUFFER_DURATION(box->buffer) =
+      type == INIT ? GST_CLOCK_TIME_NONE : duration;
+  }
+
+  // Check if process can continue
+  BoxInfo* box = g_queue_peek_head(mp4mx_ctx->box_queue);
+  return mp4mx_is_box_complete(box);
+}
+
+GstBufferList*
+mp4mx_create_buffer_list(GF_Filter* filter)
+{
+  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+
+  GstBufferList* buffer_list = gst_buffer_list_new();
+  GST_DEBUG("GOP complete");
+
+  // Set the flags
+  for (guint type = 0; type < LAST; type++) {
+    switch (type) {
+      case INIT:
+        if (!GET_TYPE(INIT)->is_complete)
+          break;
+        if (mp4mx_ctx->segment_count == 0) {
+          GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_DISCONT);
+          ctx->is_continuous = TRUE;
+        }
+        // fallthrough
+      case HEADER:
+        GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_HEADER);
+        if (mp4mx_ctx->segment_count > 0)
+          GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer,
+                              GST_BUFFER_FLAG_DELTA_UNIT);
+        break;
+      case DATA:
+        GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_MARKER);
+        GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  // Init only if it's present
+  if (GET_TYPE(INIT)->is_complete) {
+    GST_DEBUG("Adding init buffer");
+    gst_buffer_list_add(buffer_list, GET_TYPE(INIT)->buffer);
+
+    // Init won't have timings set, set it using header
+    GST_BUFFER_PTS(GET_TYPE(INIT)->buffer) =
+      GST_BUFFER_PTS(GET_TYPE(HEADER)->buffer);
+    GST_BUFFER_DTS(GET_TYPE(INIT)->buffer) =
+      GST_BUFFER_DTS(GET_TYPE(HEADER)->buffer) -
+      GST_BUFFER_DURATION(GET_TYPE(HEADER)->buffer);
+  }
+
+  // Copy the mdat header
+  GstMemory* mdat_hdr =
+    gst_memory_copy(gst_buffer_peek_memory(GET_TYPE(DATA)->buffer, 0), 0, 8);
+
+  // Append the memory to the header
+  gst_buffer_append_memory(GET_TYPE(HEADER)->buffer, mdat_hdr);
+
+  // Resize the data buffer
+  gst_buffer_resize(GET_TYPE(DATA)->buffer, 8, -1);
+
+  // Add the header and data buffers
+  gst_buffer_list_add(buffer_list, GET_TYPE(HEADER)->buffer);
+  gst_buffer_list_add(buffer_list, GET_TYPE(DATA)->buffer);
+
+  // Reset the buffer contents
+  for (guint i = 0; i < LAST; i++) {
+    GET_TYPE(i)->buffer = NULL;
+    GET_TYPE(i)->is_complete = FALSE;
+  }
+
+  return buffer_list;
+}
+
 GF_Err
 mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 {
@@ -145,225 +347,87 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
   if (!pck)
     return GF_OK;
 
-  // Declare variables
-  GstMemory* mem;
-
-  // Get the data
-  u32 size;
-  const u8* data = gf_filter_pck_get_data(pck, &size);
-
-  mp4mx_ctx->size += size;
-  guint32 offset = 0;
-
-  // If we have leftover data, append it to the current buffer
-  if (mp4mx_ctx->leftover) {
-    guint32 leftover = MIN(mp4mx_ctx->leftover, size);
-    gf_filter_pck_ref(&pck);
-    mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
-                                 (gpointer)data,
-                                 leftover,
-                                 0,
-                                 leftover,
-                                 pck,
-                                 (GDestroyNotify)gf_filter_pck_unref);
-
-    // Append the memory to the buffer
-    g_assert(mp4mx_ctx->contents[mp4mx_ctx->current_type]->buffer);
-    gst_buffer_append_memory(
-      mp4mx_ctx->contents[mp4mx_ctx->current_type]->buffer, mem);
-
-    // Update the leftover and data
-    mp4mx_ctx->leftover -= leftover;
-    offset += leftover;
-  }
+  // Parse the boxes
+  if (!mp4mx_parse_boxes(filter, pck))
+    return GF_OK;
 
   // Iterate over the boxes
-  while (offset < size) {
-    guint32 box_size =
-      GUINT32_FROM_LE((data[offset] << 24) | (data[offset + 1] << 16) |
-                      (data[offset + 2] << 8) | data[offset + 3]);
-    guint32 box_type =
-      GUINT32_FROM_LE((data[offset + 4] << 24) | (data[offset + 5] << 16) |
-                      (data[offset + 6] << 8) | data[offset + 7]);
+  while (!g_queue_is_empty(mp4mx_ctx->box_queue)) {
+    BoxInfo* box = g_queue_peek_head(mp4mx_ctx->box_queue);
+    if (!mp4mx_is_box_complete(box))
+      break;
 
-    // Special handling for mdat
-    if (box_type == GF_ISOM_BOX_TYPE_MDAT) {
-      // Create a new memory for the mdat header
-      gf_filter_pck_ref(&pck);
-      mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
-                                   (gpointer)data + offset,
-                                   8,
-                                   0,
-                                   8,
-                                   pck,
-                                   (GDestroyNotify)gf_filter_pck_unref);
-
-      // Append the memory to the buffer
-      g_assert(mp4mx_ctx->contents[HEADER]->buffer);
-      gst_buffer_append_memory(mp4mx_ctx->contents[HEADER]->buffer, mem);
-
-      // Complete the header
-      mp4mx_ctx->contents[HEADER]->is_complete = TRUE;
-      mp4mx_ctx->current_type = DATA;
-
-      // Set the expected size
-      mp4mx_ctx->contents[DATA]->expected_size = box_size - 8;
-
-      // Move the offset
-      offset += 8;
-      box_size -= 8;
-      goto append_memory;
-    }
-
+    GST_DEBUG("Current type: %d", mp4mx_ctx->current_type);
     guint32 last_type;
     for (last_type = mp4mx_ctx->current_type; last_type < LAST; last_type++) {
       // Check if the current box is related to current type
       gboolean found = FALSE;
       for (guint i = 0; box_mapping[last_type].boxes[i]; i++) {
-        if (box_mapping[last_type].boxes[i] == box_type) {
+        if (box_mapping[last_type].boxes[i] == box->box_type) {
           found = TRUE;
           break;
         }
       }
-      if (found)
-        break;
 
-      // If not found, current type is completed
-      mp4mx_ctx->contents[last_type]->is_complete = TRUE;
+      // Data only has one box type
+      if (found && last_type == DATA)
+        GET_TYPE(last_type)->is_complete = TRUE;
+
+      if (found) {
+        GST_DEBUG("Found box type %s for type %d",
+                  gf_4cc_to_str(box->box_type),
+                  last_type);
+        break;
+      }
+
+      // If not found, it's likely the last type was completed
+      GET_TYPE(last_type)->is_complete = TRUE;
     }
 
     // Check if the box is unknown
     if (last_type == LAST) {
-      GST_ERROR("Unknown box type: %s", gf_4cc_to_str(box_type));
+      GST_ERROR("Unknown box type: %s", gf_4cc_to_str(box->box_type));
       g_assert_not_reached();
     }
 
     // Set the current type
     mp4mx_ctx->current_type = last_type;
 
-  append_memory:
-    // Create a new memory
-    gf_filter_pck_ref(&pck);
-    mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
-                                 (gpointer)data + offset,
-                                 box_size,
-                                 0,
-                                 box_size,
-                                 pck,
-                                 (GDestroyNotify)gf_filter_pck_unref);
+    // Create the master buffer
+    GstBuffer** master_buffer = &GET_TYPE(last_type)->buffer;
+    if (!(*master_buffer))
+      *master_buffer = box->buffer;
+    else
+      *master_buffer = gst_buffer_append(*master_buffer, box->buffer);
 
-    // Append the memory to the buffer
-    BufferType type = mp4mx_ctx->current_type;
-    if (!mp4mx_ctx->contents[type]->buffer) {
-      GstBuffer* buf = mp4mx_ctx->contents[type]->buffer = gst_buffer_new();
+    GST_DEBUG("New buffer [type: %d, size: %" G_GUINT32_FORMAT
+              "]: %p (PTS: %" G_GUINT64_FORMAT ", DTS: %" G_GUINT64_FORMAT
+              ", duration: %" G_GUINT64_FORMAT ")",
+              last_type,
+              box->box_size,
+              *master_buffer,
+              GST_BUFFER_PTS(*master_buffer),
+              GST_BUFFER_DTS(*master_buffer),
+              GST_BUFFER_DURATION(*master_buffer));
 
-      // Calculate the PTS
-      if (gf_filter_pck_get_cts(pck) != GF_FILTER_NO_TS) {
-        guint64 pts = gf_timestamp_rescale(
-          gf_filter_pck_get_cts(pck), mp4mx_ctx->timescale, GST_SECOND);
-        pts += ctx->global_offset;
-        GST_BUFFER_PTS(buf) = pts;
-      }
-
-      // Calculate the DTS
-      if (gf_filter_pck_get_dts(pck) != GF_FILTER_NO_TS) {
-        guint64 dts = gf_timestamp_rescale(
-          gf_filter_pck_get_dts(pck), mp4mx_ctx->timescale, GST_SECOND);
-        dts += ctx->global_offset;
-        GST_BUFFER_DTS(buf) = dts;
-      }
-
-      // Calculate the duration
-      guint64 duration = gf_timestamp_rescale(
-        gf_filter_pck_get_duration(pck), mp4mx_ctx->timescale, GST_SECOND);
-      GST_BUFFER_DURATION(buf) = type == INIT ? GST_CLOCK_TIME_NONE : duration;
-
-      // Set the flags
-      switch (type) {
-        case INIT:
-          if (mp4mx_ctx->segment_count == 0) {
-            GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DISCONT);
-            ctx->is_continuous = TRUE;
-          }
-          // fallthrough
-        case HEADER:
-          GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_HEADER);
-          if (mp4mx_ctx->segment_count > 0)
-            GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DELTA_UNIT);
-          break;
-        case DATA:
-          GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_MARKER);
-          GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DELTA_UNIT);
-          break;
-
-        default:
-          break;
-      }
-    }
-
-    // Append the memory to the buffer
-    gst_buffer_append_memory(mp4mx_ctx->contents[type]->buffer, mem);
-
-    // Move to the next box
-    offset += box_size;
-  }
-
-  // Update leftover and global offset
-  if (mp4mx_ctx->offset + offset > mp4mx_ctx->size) {
-    mp4mx_ctx->leftover = mp4mx_ctx->offset + offset - mp4mx_ctx->size;
-  } else {
-    g_assert(mp4mx_ctx->leftover == 0);
-    mp4mx_ctx->offset = MIN(mp4mx_ctx->offset + offset, mp4mx_ctx->size);
-  }
-
-  // Check if the data is complete
-  if (mp4mx_ctx->contents[DATA]->buffer) {
-    guint32 expected_size = mp4mx_ctx->contents[DATA]->expected_size;
-    guint32 buffer_size =
-      gst_buffer_get_size(mp4mx_ctx->contents[DATA]->buffer);
-
-    // Check if the buffer is complete
-    if (buffer_size >= expected_size) {
-      g_assert(buffer_size == expected_size);
-
-      // Update the state
-      mp4mx_ctx->current_type = HEADER;
-      mp4mx_ctx->contents[DATA]->is_complete = TRUE;
-    }
+    // Pop the box
+    g_free(g_queue_pop_head(mp4mx_ctx->box_queue));
   }
 
   // Check if the GOP is complete
-  if (mp4mx_ctx->contents[HEADER]->is_complete &&
-      mp4mx_ctx->contents[DATA]->is_complete) {
-    // Create a buffer list
-    GstBufferList* buffer_list = gst_buffer_list_new();
+  if (!GET_TYPE(HEADER)->is_complete || !GET_TYPE(DATA)->is_complete)
+    return GF_OK;
 
-    // Init only if it's present
-    if (mp4mx_ctx->contents[INIT]->is_complete) {
-      gst_buffer_list_add(buffer_list, mp4mx_ctx->contents[INIT]->buffer);
+  // Create and enqueue the buffer list
+  GstBufferList* buffer_list = mp4mx_create_buffer_list(filter);
+  g_queue_push_tail(mp4mx_ctx->output_queue, buffer_list);
 
-      // Init won't have timings set, set it using header
-      GST_BUFFER_PTS(mp4mx_ctx->contents[INIT]->buffer) =
-        GST_BUFFER_PTS(mp4mx_ctx->contents[HEADER]->buffer);
-      GST_BUFFER_DTS(mp4mx_ctx->contents[INIT]->buffer) =
-        GST_BUFFER_DTS(mp4mx_ctx->contents[HEADER]->buffer) -
-        GST_BUFFER_DURATION(mp4mx_ctx->contents[HEADER]->buffer);
-    }
+  // Increment the segment count
+  mp4mx_ctx->segment_count++;
+  GST_DEBUG("Enqueued GOP #%" G_GUINT32_FORMAT, mp4mx_ctx->segment_count);
 
-    gst_buffer_list_add(buffer_list, mp4mx_ctx->contents[HEADER]->buffer);
-    gst_buffer_list_add(buffer_list, mp4mx_ctx->contents[DATA]->buffer);
-
-    // Enqueue the buffer
-    g_queue_push_tail(mp4mx_ctx->output_queue, buffer_list);
-    mp4mx_ctx->segment_count++;
-
-    // Reset the buffer contents
-    for (guint i = 0; i < LAST; i++) {
-      mp4mx_ctx->contents[i]->buffer = NULL;
-      mp4mx_ctx->contents[i]->is_complete = FALSE;
-      mp4mx_ctx->contents[i]->expected_size = 0;
-    }
-  }
+  // Reset the current type
+  mp4mx_ctx->current_type = HEADER;
 
   return GF_OK;
 }
