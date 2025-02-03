@@ -157,6 +157,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
   // If we have leftover data, append it to the current buffer
   if (mp4mx_ctx->leftover) {
     guint32 leftover = MIN(mp4mx_ctx->leftover, size);
+    gf_filter_pck_ref(&pck);
     mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
                                  (gpointer)data,
                                  leftover,
@@ -164,7 +165,6 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
                                  leftover,
                                  pck,
                                  (GDestroyNotify)gf_filter_pck_unref);
-    gf_filter_pck_ref(&pck);
 
     // Append the memory to the buffer
     g_assert(mp4mx_ctx->contents[mp4mx_ctx->current_type]->buffer);
@@ -188,6 +188,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
     // Special handling for mdat
     if (box_type == GF_ISOM_BOX_TYPE_MDAT) {
       // Create a new memory for the mdat header
+      gf_filter_pck_ref(&pck);
       mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
                                    (gpointer)data + offset,
                                    8,
@@ -195,7 +196,6 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
                                    8,
                                    pck,
                                    (GDestroyNotify)gf_filter_pck_unref);
-      gf_filter_pck_ref(&pck);
 
       // Append the memory to the buffer
       g_assert(mp4mx_ctx->contents[HEADER]->buffer);
@@ -242,6 +242,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 
   append_memory:
     // Create a new memory
+    gf_filter_pck_ref(&pck);
     mem = gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY,
                                  (gpointer)data + offset,
                                  box_size,
@@ -249,7 +250,6 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
                                  box_size,
                                  pck,
                                  (GDestroyNotify)gf_filter_pck_unref);
-    gf_filter_pck_ref(&pck);
 
     // Append the memory to the buffer
     BufferType type = mp4mx_ctx->current_type;
