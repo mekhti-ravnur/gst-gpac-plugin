@@ -59,14 +59,13 @@ IsSegmentInit(GstBuffer* buffer)
 }
 
 guint32
-IsSegmentHeader(GstBuffer* buffer)
+IsSegmentHeader(GstBuffer* buffer, bool is_first = false)
 {
   // It must only have the following flags
-  if (GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT)) {
-    // cmafmux sets this flag on N>0 buffers
+  if (is_first)
+    EXPECT_FALSE(GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT));
+  else
     EXPECT_TRUE(GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT));
-  }
-  // gpacmp4mx does not
   EXPECT_TRUE(GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_HEADER));
 
   // It must contain also contain at least "ftyp" and "moov" boxes
@@ -128,8 +127,7 @@ TEST_F(GstTestFixture, StructureTest)
   this->StartPipeline();
 
   // Go through all buffers
-  bool first_cmaf_buffer = true;
-  bool first_gpacmp4mx_buffer = true;
+  int segment_count = 0;
   while (true) {
     GstBufferList* cmaf_buffer = cmafmux_sink->PopBuffer();
     GstBufferList* gpacmp4mx_buffer = gpacmp4mx_sink->PopBuffer();
@@ -153,25 +151,19 @@ TEST_F(GstTestFixture, StructureTest)
   ASSERT_LT(idx, buffer_count);                  \
   buf = gst_buffer_list_get(buffer_list, idx++);
 
-      if ((is_cmaf && first_cmaf_buffer) ||
-          (!is_cmaf && first_gpacmp4mx_buffer)) {
+      if (segment_count == 0) {
         EXPECT_GE(buffer_count, 3); // init, header, delta
 
         // Check buffer #0
         GET_NEXT_BUFFER();
         IsSegmentInit(buf);
-
-        if (is_cmaf)
-          first_cmaf_buffer = false;
-        else
-          first_gpacmp4mx_buffer = false;
       } else {
         EXPECT_GE(buffer_count, 2); // header, delta
       }
 
       // Check buffer #1
       GET_NEXT_BUFFER();
-      guint32 data_size = IsSegmentHeader(buf);
+      guint32 data_size = IsSegmentHeader(buf, segment_count == 0);
 
       // Check buffer #2...N
       guint32 leftover = data_size;
@@ -186,6 +178,7 @@ TEST_F(GstTestFixture, StructureTest)
 
 #undef GET_NEXT_BUFFER
     }
+    segment_count++;
   }
 }
 

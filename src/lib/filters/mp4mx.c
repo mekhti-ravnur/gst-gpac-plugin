@@ -69,6 +69,7 @@ typedef struct
 
   // State
   BufferType current_type;
+  guint32 segment_count;
 
   // Buffer contents for the init, header, and data
   BufferContents* contents[3];
@@ -256,16 +257,39 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
     if (!mp4mx_ctx->contents[type]->buffer) {
       GstBuffer* buf = mp4mx_ctx->contents[type]->buffer = gst_buffer_new();
 
+      // Calculate the PTS
+      if (gf_filter_pck_get_cts(pck) != GF_FILTER_NO_TS) {
+        guint64 pts = gf_timestamp_rescale(
+          gf_filter_pck_get_cts(pck), mp4mx_ctx->timescale, GST_SECOND);
+        pts += ctx->global_offset;
+        GST_BUFFER_PTS(buf) = pts;
+      }
+
+      // Calculate the DTS
+      if (gf_filter_pck_get_dts(pck) != GF_FILTER_NO_TS) {
+        guint64 dts = gf_timestamp_rescale(
+          gf_filter_pck_get_dts(pck), mp4mx_ctx->timescale, GST_SECOND);
+        dts += ctx->global_offset;
+        GST_BUFFER_DTS(buf) = dts;
+      }
+
+      // Calculate the duration
+      guint64 duration = gf_timestamp_rescale(
+        gf_filter_pck_get_duration(pck), mp4mx_ctx->timescale, GST_SECOND);
+      GST_BUFFER_DURATION(buf) = type == INIT ? GST_CLOCK_TIME_NONE : duration;
+
       // Set the flags
       switch (type) {
         case INIT:
-          if (!ctx->is_continuous) {
+          if (mp4mx_ctx->segment_count == 0) {
             GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DISCONT);
             ctx->is_continuous = TRUE;
           }
           // fallthrough
         case HEADER:
           GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_HEADER);
+          if (mp4mx_ctx->segment_count > 0)
+            GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DELTA_UNIT);
           break;
         case DATA:
           GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_MARKER);
@@ -275,23 +299,6 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
         default:
           break;
       }
-
-      // Calculate the PTS
-      guint64 pts = gf_timestamp_rescale(
-        gf_filter_pck_get_cts(pck), mp4mx_ctx->timescale, GST_SECOND);
-      pts += ctx->global_offset;
-      GST_BUFFER_PTS(buf) = pts;
-
-      // Calculate the DTS
-      guint64 dts = gf_timestamp_rescale(
-        gf_filter_pck_get_dts(pck), mp4mx_ctx->timescale, GST_SECOND);
-      dts += ctx->global_offset;
-      GST_BUFFER_DTS(buf) = dts;
-
-      // Calculate the duration
-      guint64 duration = gf_timestamp_rescale(
-        gf_filter_pck_get_duration(pck), mp4mx_ctx->timescale, GST_SECOND);
-      GST_BUFFER_DURATION(buf) = type == INIT ? GST_CLOCK_TIME_NONE : duration;
     }
 
     // Append the memory to the buffer
@@ -348,6 +355,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 
     // Enqueue the buffer
     g_queue_push_tail(mp4mx_ctx->output_queue, buffer_list);
+    mp4mx_ctx->segment_count++;
 
     // Reset the buffer contents
     for (guint i = 0; i < LAST; i++) {
