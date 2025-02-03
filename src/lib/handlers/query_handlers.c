@@ -50,7 +50,11 @@ QUERY_HANDLER_SIGNATURE(duration)
   // Query the duration
   g_autoptr(GstQuery) query = gst_query_new_duration(GST_FORMAT_TIME);
   gboolean ret = gst_pad_peer_query(priv->self, query);
-  g_return_val_if_fail(ret, FALSE);
+  if (!ret) {
+    GST_ELEMENT_ERROR(
+      priv->self, LIBRARY, FAILED, ("Failed to query duration"), (NULL));
+    return FALSE;
+  }
 
   // Parse the duration
   gint64 duration;

@@ -67,18 +67,36 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
 
   if (dir == GPAC_MEMIO_DIR_IN) {
     memio = sess->memin = gf_fs_new_filter(sess->session, "memin", 0, &e);
-    g_return_val_if_fail(sess->memin, e);
+    if (!sess->memin) {
+      GST_ELEMENT_ERROR(sess->element,
+                        LIBRARY,
+                        INIT,
+                        ("Failed to create memin filter"),
+                        (NULL));
+      return e;
+    }
     gf_filter_set_process_ckb(memio, gpac_default_memin_process_cb);
     gf_filter_set_process_event_ckb(memio, gpac_default_memin_process_event);
   } else {
     gf_fs_add_filter_register(sess->session, &MemOutRegister);
     memio = sess->memout = gf_fs_load_filter(sess->session, "memout", &e);
-    g_return_val_if_fail(sess->memout, e);
+    if (!sess->memout) {
+      GST_ELEMENT_ERROR(
+        sess->element, LIBRARY, INIT, ("Failed to load memout filter"), (NULL));
+      return e;
+    }
   }
 
   // Set the runtime user data
   GPAC_MemIoContext* rt_udta = g_new0(GPAC_MemIoContext, 1);
-  g_return_val_if_fail(rt_udta, GF_OUT_OF_MEM);
+  if (!rt_udta) {
+    GST_ELEMENT_ERROR(sess->element,
+                      LIBRARY,
+                      INIT,
+                      ("Failed to allocate memory for runtime user data"),
+                      (NULL));
+    return GF_OUT_OF_MEM;
+  }
   gpac_return_if_fail(gf_filter_set_rt_udta(memio, rt_udta));
   rt_udta->dir = dir;
   rt_udta->global_offset = GST_CLOCK_TIME_NONE;
@@ -103,7 +121,14 @@ gpac_memio_assign_queue(GPAC_SessionContext* sess,
 {
   GPAC_MemIoContext* rt_udta = gf_filter_get_rt_udta(
     dir == GPAC_MEMIO_DIR_IN ? sess->memin : sess->memout);
-  g_return_if_fail(rt_udta);
+  if (!rt_udta) {
+    GST_ELEMENT_ERROR(sess->element,
+                      LIBRARY,
+                      FAILED,
+                      ("Failed to get runtime user data"),
+                      (NULL));
+    return;
+  }
   rt_udta->queue = queue;
 }
 
@@ -114,7 +139,14 @@ gpac_memio_set_eos(GPAC_SessionContext* sess, gboolean eos)
     return;
 
   GPAC_MemIoContext* rt_udta = gf_filter_get_rt_udta(sess->memin);
-  g_return_if_fail(rt_udta);
+  if (!rt_udta) {
+    GST_ELEMENT_ERROR(sess->element,
+                      LIBRARY,
+                      FAILED,
+                      ("Failed to get runtime user data"),
+                      (NULL));
+    return;
+  }
   rt_udta->eos = eos;
 }
 
@@ -133,15 +165,22 @@ gpac_memio_set_caps(GPAC_SessionContext* sess, GstCaps* caps)
   guint new_nb_caps = 0;
   GF_FilterCapability* gf_caps = gpac_gstcaps_to_gfcaps(caps, &new_nb_caps);
   if (!gf_caps) {
-    GST_ERROR("Failed to convert the caps to GF_FilterCapability");
+    GST_ELEMENT_ERROR(sess->element,
+                      STREAM,
+                      FAILED,
+                      ("Failed to convert the caps to GF_FilterCapability"),
+                      (NULL));
     return FALSE;
   }
 
   // Set the capabilities
   if (gf_filter_override_caps(sess->memout, gf_caps, new_nb_caps) != GF_OK) {
-    GST_ERROR(
-      "Failed to set the caps on the memory output filter, reverting to "
-      "the previous caps");
+    GST_ELEMENT_ERROR(sess->element,
+                      STREAM,
+                      FAILED,
+                      ("Failed to set the caps on the memory output filter, "
+                       "reverting to the previous caps"),
+                      (NULL));
     gf_free(gf_caps);
     gf_filter_override_caps(sess->memout, current_caps, cur_nb_caps);
     return FALSE;
@@ -164,7 +203,8 @@ gpac_memio_consume(GPAC_SessionContext* sess, void** outptr)
     return GPAC_FILTER_PP_RET_NULL;
 
   GPAC_MemIoContext* ctx = gf_filter_get_rt_udta(sess->memout);
-  g_return_val_if_fail(ctx, GPAC_FILTER_PP_RET_ERROR);
+  if (!ctx)
+    return GPAC_FILTER_PP_RET_ERROR;
 
   // Check if we have a input PID yet
   if (!ctx->ipid)
@@ -187,7 +227,14 @@ gpac_memio_set_global_offset(GPAC_SessionContext* sess,
     return;
 
   GPAC_MemIoContext* ctx = gf_filter_get_rt_udta(sess->memout);
-  g_return_if_fail(ctx);
+  if (!ctx) {
+    GST_ELEMENT_ERROR(sess->element,
+                      LIBRARY,
+                      FAILED,
+                      ("Failed to get runtime user data"),
+                      (NULL));
+    return;
+  }
 
   // Get the segment offset
   guint64 offset = segment->base + segment->start + segment->offset;
@@ -195,8 +242,14 @@ gpac_memio_set_global_offset(GPAC_SessionContext* sess,
     return;
   if (ctx->global_offset == GST_CLOCK_TIME_NONE || !ctx->is_continuous) {
     ctx->global_offset = MIN(offset, ctx->global_offset);
-  } else if (ctx->global_offset > offset)
-    GST_WARNING("Cannot set a global offset smaller than the current one");
+  } else if (ctx->global_offset > offset) {
+    GST_ELEMENT_WARNING(
+      sess->element,
+      STREAM,
+      FAILED,
+      ("Cannot set a global offset smaller than the current one"),
+      (NULL));
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -230,6 +283,7 @@ gpac_default_memin_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
     GF_FilterPid* pid = evt->base.on_pid;
     GF_Fraction intra_period = evt->encode_hints.intra_period;
     GpacPadPrivate* priv = gf_filter_pid_get_udta(pid);
+    GstElement* element = gst_pad_get_parent_element(priv->self);
 
     // Set the IDR period
     priv->idr_period =
@@ -242,8 +296,13 @@ gpac_default_memin_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
       // Request a new IDR, immediately
       GstEvent* gst_event =
         gst_video_event_new_upstream_force_key_unit(priv->idr_next, TRUE, 1);
-      if (!gst_pad_push_event(priv->self, gst_event))
-        GST_WARNING("Failed to push the force key unit event");
+      if (!gst_pad_push_event(priv->self, gst_event)) {
+        GST_ELEMENT_WARNING(element,
+                            STREAM,
+                            FAILED,
+                            ("Failed to push the force key unit event"),
+                            (NULL));
+      }
     }
 
     return GF_TRUE;

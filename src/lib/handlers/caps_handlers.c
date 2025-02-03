@@ -57,7 +57,11 @@ CAPS_HANDLER_SIGNATURE(stream_type)
 
   // Get the stream type
   u32 stream_type = gf_stream_type_by_name(media);
-  g_return_val_if_fail(stream_type != GF_STREAM_UNKNOWN, FALSE);
+  if (stream_type == GF_STREAM_UNKNOWN) {
+    GST_ELEMENT_ERROR(
+      element, LIBRARY, FAILED, ("Unknown stream type"), (NULL));
+    return FALSE;
+  }
 
   // Check the subtype
   if (!g_strcmp0(media, "video")) {
@@ -92,7 +96,11 @@ CAPS_HANDLER_SIGNATURE(codec_id)
 
   // If we still couldn't determine the codec id, log a warning
   if (codec_id == GF_CODECID_NONE) {
-    GST_ERROR("Could not determine codec id for %s/%s", media, codec);
+    GST_ELEMENT_ERROR(element,
+                      STREAM,
+                      FAILED,
+                      ("Could not determine codec id for %s/%s", media, codec),
+                      (NULL));
     return FALSE;
   }
 
@@ -150,7 +158,10 @@ CAPS_HANDLER_SIGNATURE(width)
 
   gint width = -1;
   gst_structure_get_int(structure, "width", &width);
-  g_return_val_if_fail(width > 0, FALSE);
+  if (width <= 0) {
+    GST_ELEMENT_ERROR(element, LIBRARY, FAILED, ("Invalid width"), (NULL));
+    return FALSE;
+  }
 
   // Set the width property
   SET_PROP(GF_PROP_PID_WIDTH, PROP_UINT(width));
@@ -167,7 +178,10 @@ CAPS_HANDLER_SIGNATURE(height)
 
   gint height = -1;
   gst_structure_get_int(structure, "height", &height);
-  g_return_val_if_fail(height > 0, FALSE);
+  if (height <= 0) {
+    GST_ELEMENT_ERROR(element, LIBRARY, FAILED, ("Invalid height"), (NULL));
+    return FALSE;
+  }
 
   // Set the height property
   SET_PROP(GF_PROP_PID_HEIGHT, PROP_UINT(height));
@@ -184,7 +198,11 @@ CAPS_HANDLER_SIGNATURE(sample_rate)
 
   gint rate = -1;
   gst_structure_get_int(structure, "rate", &rate);
-  g_return_val_if_fail(rate > 0, FALSE);
+  if (rate <= 0) {
+    GST_ELEMENT_ERROR(
+      element, LIBRARY, FAILED, ("Invalid sample rate"), (NULL));
+    return FALSE;
+  }
 
   // Set the sample rate property
   SET_PROP(GF_PROP_PID_SAMPLE_RATE, PROP_UINT(rate));
@@ -225,8 +243,12 @@ CAPS_HANDLER_SIGNATURE(timescale)
     if (p)
       timescale = p->value.uint;
   } else {
-    GST_ERROR("Unsupported media type (%s) for timescale", media);
-    g_return_val_if_reached(FALSE);
+    GST_ELEMENT_ERROR(element,
+                      LIBRARY,
+                      FAILED,
+                      ("Unsupported media type (%s) for timescale", media),
+                      (NULL));
+    return FALSE;
   }
 
   if (timescale == 0)
@@ -265,7 +287,8 @@ CAPS_HANDLER_SIGNATURE(decoder_config)
   GstBuffer* buffer = gst_value_get_buffer(codec_data);
   g_auto(GstBufferMapInfo) map = GST_MAP_INFO_INIT;
   if (!gst_buffer_map(buffer, &map, GST_MAP_READ)) {
-    GST_ERROR("Failed to map codec_data buffer");
+    GST_ELEMENT_ERROR(
+      element, STREAM, FAILED, ("Failed to map codec_data buffer"), (NULL));
     return FALSE;
   }
 

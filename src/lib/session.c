@@ -70,7 +70,8 @@ process_link_directive(char* link,
     link_filter_idx = 0;
     if (strlen(link) > 1) {
       link_filter_idx = (s32)strtol(link + 1, NULL, 10);
-      g_return_val_if_fail(link_filter_idx >= 0, GF_BAD_PARAM);
+      if (link_filter_idx < 0)
+        return GF_BAD_PARAM;
     }
   } else
     link_filter_idx = 0;
@@ -83,17 +84,18 @@ process_link_directive(char* link,
     link_from = gf_list_get(
       loaded_filters, gf_list_count(loaded_filters) - 1 - (u32)link_filter_idx);
 
-  g_return_val_if_fail(link_from, GF_BAD_PARAM);
+  if (!link_from)
+    return GF_BAD_PARAM;
   gf_filter_set_source(filter, link_from, link_prev_filter_ext);
   return GF_OK;
 }
 
 gboolean
-gpac_session_init(GPAC_SessionContext* ctx)
+gpac_session_init(GPAC_SessionContext* ctx, GstElement* element)
 {
   ctx->session = gf_fs_new_defaults(GF_FS_FLAG_NON_BLOCKING);
-  g_return_val_if_fail(ctx->session, FALSE);
-  return TRUE;
+  ctx->element = element;
+  return ctx->session != NULL;
 }
 
 gboolean
@@ -153,14 +155,17 @@ gpac_session_open(GPAC_SessionContext* ctx, gchar* graph)
 
   // Check if the session is initialized
   if (G_UNLIKELY(!ctx->session)) {
-    GST_ERROR("Failed to open gpac filter session, session not initialized");
+    GST_ELEMENT_ERROR(
+      ctx->element,
+      STREAM,
+      FAILED,
+      ("Failed to open gpac filter session, session not initialized"),
+      (NULL));
     return GF_BAD_PARAM;
   }
 
-  if (!graph) {
-    GST_INFO("No graph specified, gpac will only use the signal target");
+  if (!graph)
     return GF_OK;
-  }
 
   // Load the graph
   GF_List* links_directives = gf_list_new();
@@ -168,7 +173,14 @@ gpac_session_open(GPAC_SessionContext* ctx, gchar* graph)
   gchar** nodes = g_strsplit(graph, " ", -1);
 
   // We must have a memory input filter, add it so that it can be referenced
-  g_return_val_if_fail(ctx->memin, GF_BAD_PARAM);
+  if (!ctx->memin) {
+    GST_ELEMENT_ERROR(ctx->element,
+                      LIBRARY,
+                      FAILED,
+                      ("Memory input filter is missing"),
+                      (NULL));
+    return GF_BAD_PARAM;
+  }
   gf_list_add(loaded_filters, ctx->memin);
 
   // Loop through the nodes
@@ -185,8 +197,14 @@ gpac_session_open(GPAC_SessionContext* ctx, gchar* graph)
       filter = gf_fs_load_destination(ctx->session, nodes[++i], NULL, NULL, &e);
       f_loaded = TRUE;
     } else {
-      if (node[0] == '-')
-        GST_WARNING("Cannot parse global option within graph: %s", node);
+      if (node[0] == '-') {
+        GST_ELEMENT_WARNING(
+          ctx->element,
+          STREAM,
+          FAILED,
+          ("Cannot parse global option within graph: %s", node),
+          (NULL));
+      }
     }
 
     if (!f_loaded) {
@@ -242,9 +260,14 @@ gpac_session_load_filter(GPAC_SessionContext* ctx, const gchar* filter_name)
 {
   GF_Err e = GF_OK;
   GF_Filter* filter = gf_fs_load_filter(ctx->session, filter_name, &e);
-  if (!filter)
-    GST_ERROR(
-      "Failed to load filter \"%s\": %s", filter_name, gf_error_to_string(e));
+  if (!filter) {
+    GST_ELEMENT_ERROR(
+      ctx->element,
+      STREAM,
+      FAILED,
+      ("Failed to load filter \"%s\": %s", filter_name, gf_error_to_string(e)),
+      (NULL));
+  }
   return filter;
 }
 

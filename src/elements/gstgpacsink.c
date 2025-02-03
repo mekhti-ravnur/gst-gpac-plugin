@@ -88,8 +88,11 @@ gst_gpac_sink_request_new_pad(GstElement* element,
   // Request a new pad from the aggregator
   peer = gst_element_request_pad(gpac_sink->tf, templ, pad_name, caps);
   if (!peer) {
-    GST_ERROR_OBJECT(gpac_sink,
-                     "Unable to request pad name from the aggregator");
+    GST_ELEMENT_ERROR(gpac_sink,
+                      STREAM,
+                      FAILED,
+                      ("Unable to request pad name from the aggregator"),
+                      (NULL));
     return NULL;
   }
 

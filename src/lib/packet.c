@@ -40,6 +40,7 @@ gpac_pck_get_stream_time(GstClockTime time,
                          GpacPadPrivate* priv,
                          gboolean is_dts)
 {
+  GstElement* element = gst_pad_get_parent_element(priv->self);
   if (!GST_CLOCK_TIME_IS_VALID(time))
     goto fail;
 
@@ -65,16 +66,25 @@ gpac_pck_get_stream_time(GstClockTime time,
       unsigned_time = priv->dts_offset + unsigned_time;
     }
   } else if (is_negative) {
-    GST_WARNING("PTS %" GST_TIME_FORMAT
-                " is not valid, likely not related to current segment",
-                GST_TIME_ARGS(time));
+    GST_ELEMENT_WARNING(element,
+                        STREAM,
+                        FAILED,
+                        ("PTS %" GST_TIME_FORMAT
+                         " is not valid, likely not related to current segment",
+                         GST_TIME_ARGS(time)),
+                        (NULL));
   }
 
   return unsigned_time;
 
 fail:
-  GST_ERROR("Failed to convert time %" GST_TIME_FORMAT " to stream time",
-            GST_TIME_ARGS(time));
+  GST_ELEMENT_ERROR(element,
+                    STREAM,
+                    FAILED,
+                    ("Failed to convert time %" GST_TIME_FORMAT
+                     " to stream time",
+                     GST_TIME_ARGS(time)),
+                    (NULL));
   return 0;
 }
 
@@ -84,11 +94,13 @@ gpac_pck_new_from_buffer(GstBuffer* buffer,
                          GF_FilterPid* pid)
 {
   const GF_PropertyValue* p;
+  GstElement* element = gst_pad_get_parent_element(priv->self);
 
   // Map the buffer
   g_auto(GstBufferMapInfo) map = GST_MAP_INFO_INIT;
   if (G_UNLIKELY(!gst_buffer_map(buffer, &map, GST_MAP_READ))) {
-    GST_ERROR("Failed to map buffer");
+    GST_ELEMENT_ERROR(
+      element, STREAM, FAILED, ("Failed to map buffer"), (NULL));
     return NULL;
   }
 
@@ -101,7 +113,11 @@ gpac_pck_new_from_buffer(GstBuffer* buffer,
   GF_Err err =
     gf_filter_pck_set_property(packet, GF_PROP_PCK_UDTA, &PROP_POINTER(ref));
   if (G_UNLIKELY(err != GF_OK)) {
-    GST_ERROR("Failed to save the buffer ref to the packet");
+    GST_ELEMENT_ERROR(element,
+                      STREAM,
+                      FAILED,
+                      ("Failed to save the buffer ref to the packet"),
+                      (NULL));
     gst_buffer_unref(ref);
     gf_filter_pck_unref(packet);
     return NULL;

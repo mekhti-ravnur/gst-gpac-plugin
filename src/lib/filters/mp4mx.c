@@ -385,7 +385,8 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 
     // Check if the box is unknown
     if (last_type == LAST) {
-      GST_ERROR("Unknown box type: %s", gf_4cc_to_str(box->box_type));
+      GST_ERROR("mp4mx post-processor encountered unknown box type %s",
+                gf_4cc_to_str(box->box_type));
       g_assert_not_reached();
     }
 

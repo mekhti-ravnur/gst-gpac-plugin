@@ -30,6 +30,7 @@
 
 typedef struct
 {
+  GstElement* element;
   GF_FilterSession* session;
   GF_Filter* memin;
   GF_Filter* memout;
@@ -37,10 +38,11 @@ typedef struct
 
 /*! initializes a gpac filter session
     \param[in] ctx the session context to initialize
+    \param[in] element the element to initialize the session with
     \return TRUE if the session was initialized successfully, FALSE otherwise
 */
 gboolean
-gpac_session_init(GPAC_SessionContext* ctx);
+gpac_session_init(GPAC_SessionContext* ctx, GstElement* element);
 
 /*! closes a gpac filter session
     \param[in] ctx the session context to close

@@ -210,9 +210,11 @@ retry:
     if (g_str_has_prefix(field_name, prefix)) {
       GType type = gst_structure_get_field_type(caps, field_name);
       if (type != G_TYPE_STRING) {
-        GST_WARNING("Property overrides for GPAC must be strings, %s is %s",
-                    field_name,
-                    g_type_name(type));
+        GST_WARNING_OBJECT(
+          priv->self,
+          "Property overrides for GPAC must be strings, %s is %s",
+          field_name,
+          g_type_name(type));
         continue;
       }
 
@@ -225,7 +227,7 @@ retry:
 
       // Check if the property value is valid
       if (prop_value == NULL || prop_value[0] == '\0') {
-        GST_WARNING("Empty value for %s", prop_name);
+        GST_WARNING_OBJECT(priv->self, "Empty value for %s", prop_name);
         continue;
       }
 
@@ -246,8 +248,10 @@ retry:
 
   // Check if we have nested "gpac" structure
   if (gst_structure_has_field(caps, "gpac")) {
-    g_return_val_if_fail(
-      gst_structure_get(caps, "gpac", GST_TYPE_STRUCTURE, &caps, NULL), FALSE);
+    if (!gst_structure_get(caps, "gpac", GST_TYPE_STRUCTURE, &caps, NULL)) {
+      GST_ERROR_OBJECT(priv->self, "Failed to get nested gpac structure");
+      return FALSE;
+    }
     prefix = "";
     nested = TRUE;
     goto retry;
@@ -272,7 +276,7 @@ gpac_pid_reconfigure(GPAC_PROP_IMPL_ARGS)
   g_autoptr(GList) to_skip = g_list_alloc();
   if (FLAG_SET(GPAC_PAD_CAPS_SET)) {
     if (!gpac_pid_apply_overrides(priv, pid, &to_skip)) {
-      GST_ERROR_OBJECT(element, "Failed to apply overrides");
+      GST_ERROR_OBJECT(priv->self, "Failed to apply overrides");
       return FALSE;
     }
   }
@@ -316,7 +320,7 @@ gpac_pid_reconfigure(GPAC_PROP_IMPL_ARGS)
 
     // No handler was able to handle the property
     GST_ERROR_OBJECT(
-      element,
+      priv->self,
       "None of the handlers of %s (%s) were able to set the property",
       gf_props_4cc_get_name(entry->prop_4cc),
       gf_4cc_to_str(entry->prop_4cc));
@@ -330,7 +334,11 @@ GF_FilterPid*
 gpac_pid_new(GPAC_SessionContext* sess)
 {
   GF_FilterPid* pid = gf_filter_pid_new(sess->memin);
-  g_return_val_if_fail(pid, NULL);
+  if (!pid) {
+    GST_ELEMENT_ERROR(
+      sess->element, LIBRARY, FAILED, ("Failed to create new PID"), (NULL));
+    return NULL;
+  }
   return pid;
 }
 

@@ -56,12 +56,16 @@ TAGS_HANDLER_SIGNATURE(id)
   // Try to get the id as an integer
   guint64 id_int = g_ascii_strtoull(id, NULL, 10);
   if (id_int > G_MAXUINT) {
-    GST_ERROR("Container specific track id is too large: %s", id);
+    GST_ELEMENT_ERROR(element,
+                      STREAM,
+                      FAILED,
+                      ("Container specific track id is too large: %s", id),
+                      (NULL));
     return FALSE;
   }
 
   // Set the id
-  SET_PROP(GF_PROP_PID_ID, PROP_UINT((uint)id_int));
+  SET_PROP(GF_PROP_PID_ID, PROP_UINT(id_int));
   return TRUE;
 }
 
@@ -113,7 +117,8 @@ TAGS_HANDLER_SIGNATURE(language)
   // Find the index of the language code
   gint32 lang_code = gf_lang_find(language);
   if (lang_code == -1) {
-    GST_WARNING("Unknown language code: %s", language);
+    GST_ELEMENT_WARNING(
+      element, STREAM, FAILED, ("Unknown language code: %s", language), (NULL));
     return FALSE;
   }
 
