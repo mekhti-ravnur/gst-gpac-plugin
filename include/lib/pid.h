@@ -60,6 +60,11 @@ typedef struct
   gint64 dts_offset;
   gboolean dts_offset_set;
   gboolean last_frame_was_keyframe;
+
+  // State for the encoder
+  guint64 idr_period;
+  guint64 idr_last;
+  guint64 idr_next;
 } GpacPadPrivate;
 
 #define GPAC_PROP_IMPL_ARGS_NO_ELEMENT GpacPadPrivate *priv, GF_FilterPid *pid

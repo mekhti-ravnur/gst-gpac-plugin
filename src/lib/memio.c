@@ -25,9 +25,14 @@
 #include "lib/memio.h"
 #include "gpacmessages.h"
 #include "lib/caps.h"
+#include "lib/pid.h"
+#include <gst/video/video-event.h>
 
 static GF_Err
 gpac_default_memin_process_cb(GF_Filter* filter);
+
+static Bool
+gpac_default_memin_process_event(GF_Filter* filter, const GF_FilterEvent* evt);
 
 static GF_Err
 gpac_default_memout_process_cb(GF_Filter* filter);
@@ -64,6 +69,7 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
     memio = sess->memin = gf_fs_new_filter(sess->session, "memin", 0, &e);
     g_return_val_if_fail(sess->memin, e);
     gf_filter_set_process_ckb(memio, gpac_default_memin_process_cb);
+    gf_filter_set_process_event_ckb(memio, gpac_default_memin_process_event);
   } else {
     gf_fs_add_filter_register(sess->session, &MemOutRegister);
     memio = sess->memout = gf_fs_load_filter(sess->session, "memout", &e);
@@ -215,6 +221,34 @@ gpac_default_memin_process_cb(GF_Filter* filter)
   }
 
   return GF_OK;
+}
+
+static Bool
+gpac_default_memin_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
+{
+  if (evt->base.type == GF_FEVT_ENCODE_HINTS) {
+    GF_FilterPid* pid = evt->base.on_pid;
+    GF_Fraction intra_period = evt->encode_hints.intra_period;
+    GpacPadPrivate* priv = gf_filter_pid_get_udta(pid);
+
+    // Set the IDR period
+    priv->idr_period =
+      gf_timestamp_rescale(intra_period.num, intra_period.den, GST_SECOND);
+
+    // Determine the next IDR frame
+    if (priv->idr_last != GST_CLOCK_TIME_NONE) {
+      priv->idr_next = priv->idr_last + priv->idr_period;
+
+      // Request a new IDR, immediately
+      GstEvent* gst_event =
+        gst_video_event_new_upstream_force_key_unit(priv->idr_next, TRUE, 1);
+      if (!gst_pad_push_event(priv->self, gst_event))
+        GST_WARNING("Failed to push the force key unit event");
+    }
+
+    return GF_TRUE;
+  }
+  return GF_FALSE;
 }
 
 static GF_Err

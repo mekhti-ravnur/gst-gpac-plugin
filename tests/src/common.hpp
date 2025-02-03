@@ -65,28 +65,20 @@ protected:
   void SetUp() override
   {
     GstElement* source = gst_element_factory_make_full(
-      "videotestsrc", "num-buffers", 60, "do-timestamp", TRUE, NULL);
-    GstElement* capsfilter = gst_element_factory_make_full(
-      "capsfilter",
-      "caps",
-      gst_caps_from_string("video/x-raw, framerate=30/1"),
-      NULL);
-    GstElement* encoder =
-      gst_element_factory_make_full("x264enc", "key-int-max", 30, NULL);
+      "videotestsrc", "num-buffers", 300, "do-timestamp", TRUE, NULL);
+    GstElement* encoder = gst_element_factory_make_full("x264enc", NULL);
     tee = gst_element_factory_make("tee", NULL);
 
     // Create the pipeline
     pipeline = gst_pipeline_new("test-pipeline");
-    if (!pipeline || !source || !capsfilter || !encoder || !tee) {
+    if (!pipeline || !source || !encoder || !tee) {
       g_error("Failed to create elements");
       return;
     }
 
     // Build the pipeline
-    gst_bin_add_many(GST_BIN(pipeline), source, capsfilter, encoder, tee, NULL);
-    if (!gst_element_link(source, capsfilter) ||
-        !gst_element_link(capsfilter, encoder) ||
-        !gst_element_link(encoder, tee)) {
+    gst_bin_add_many(GST_BIN(pipeline), source, encoder, tee, NULL);
+    if (!gst_element_link(source, encoder) || !gst_element_link(encoder, tee)) {
       g_error("Failed to link elements");
       return;
     }

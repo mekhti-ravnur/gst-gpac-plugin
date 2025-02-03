@@ -184,7 +184,6 @@ mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
   Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
-  BufferType type = mp4mx_ctx->current_type;
 
   // Declare variables
   gboolean need_more_data = FALSE;
@@ -258,8 +257,7 @@ mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
     // Calculate the duration
     guint64 duration = gf_timestamp_rescale(
       gf_filter_pck_get_duration(pck), mp4mx_ctx->timescale, GST_SECOND);
-    GST_BUFFER_DURATION(box->buffer) =
-      type == INIT ? GST_CLOCK_TIME_NONE : duration;
+    GST_BUFFER_DURATION(box->buffer) = duration;
   }
 
   // Check if process can continue
@@ -314,6 +312,7 @@ mp4mx_create_buffer_list(GF_Filter* filter)
     GST_BUFFER_DTS(GET_TYPE(INIT)->buffer) =
       GST_BUFFER_DTS(GET_TYPE(HEADER)->buffer) -
       GST_BUFFER_DURATION(GET_TYPE(HEADER)->buffer);
+    GST_BUFFER_DURATION(GET_TYPE(INIT)->buffer) = GST_CLOCK_TIME_NONE;
   }
 
   // Copy the mdat header

@@ -186,9 +186,9 @@ TEST_F(GstTestFixture, TimingTest)
 {
   // Create test elements
   GstElement* cmafmux = gst_element_factory_make_full(
-    "cmafmux", "chunk-duration", GST_SECOND, NULL);
+    "cmafmux", "chunk-duration", 5 * GST_SECOND, NULL);
   GstElement* gpacmp4mx =
-    gst_element_factory_make_full("gpacmp4mx", "cdur", 1.0, NULL);
+    gst_element_factory_make_full("gpacmp4mx", "cdur", 5.0, NULL);
 
   // Create element sinks
   GstAppSink* cmafmux_sink = new GstAppSink(cmafmux, tee, pipeline);

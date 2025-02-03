@@ -38,6 +38,7 @@
 
 #include <gst/base/gstaggregator.h>
 #include <gst/gst.h>
+#include <gst/video/video-event.h>
 
 G_BEGIN_DECLS
 

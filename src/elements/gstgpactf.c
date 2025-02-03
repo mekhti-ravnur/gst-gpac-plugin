@@ -169,6 +169,9 @@ gpac_prepare_pids(GstElement* element)
             goto fail;
           }
           g_object_set(agg_pad, "pid", pid, NULL);
+
+          // Share the pad private data
+          gf_filter_pid_set_udta(pid, priv);
         }
 
         if (priv->flags) {
@@ -389,6 +392,36 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
           goto next;
         }
 
+        // Send the key frame request
+        if (!GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT) &&
+            GST_BUFFER_PTS_IS_VALID(buffer)) {
+          guint64 running_time = gst_segment_to_running_time(
+            priv->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
+
+          // Check if this IDR was late
+          if (priv->idr_last != GST_CLOCK_TIME_NONE) {
+            guint64 diff = running_time - priv->idr_last;
+            diff -= priv->idr_period;
+            if (diff)
+              GST_WARNING("IDR was late by %" GST_TIME_FORMAT
+                          " on pad %s, reconsider the IDR period",
+                          GST_TIME_ARGS(diff),
+                          GST_PAD_NAME(pad));
+          }
+          priv->idr_last = running_time;
+
+          // If we have an IDR period, send the next IDR request
+          if (priv->idr_period != GST_CLOCK_TIME_NONE) {
+            priv->idr_next = running_time + priv->idr_period;
+            GstEvent* gst_event = gst_video_event_new_upstream_force_key_unit(
+              priv->idr_next, TRUE, 1);
+            GST_DEBUG("Requesting IDR at %" GST_TIME_FORMAT,
+                      GST_TIME_ARGS(priv->idr_next));
+            if (!gst_pad_push_event(pad, gst_event))
+              GST_WARNING("Failed to push the force key unit event");
+          }
+        }
+
         // Get the PID
         g_object_get(GST_AGGREGATOR_PAD(pad), "pid", &pid, NULL);
         g_assert(pid);
@@ -508,6 +541,9 @@ gst_gpac_tf_request_new_pad(GstElement* element,
   // Initialize the private data
   GpacPadPrivate* priv = g_new0(GpacPadPrivate, 1);
   priv->self = GST_PAD(pad);
+  priv->idr_period = GST_CLOCK_TIME_NONE;
+  priv->idr_last = GST_CLOCK_TIME_NONE;
+  priv->idr_next = GST_CLOCK_TIME_NONE;
   if (caps) {
     priv->caps = gst_caps_copy(caps);
     priv->flags |= GPAC_PAD_CAPS_SET;
