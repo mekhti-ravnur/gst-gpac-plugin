@@ -405,7 +405,8 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
 
         // Send the key frame request
         if (!GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT) &&
-            GST_BUFFER_PTS_IS_VALID(buffer)) {
+            GST_BUFFER_PTS_IS_VALID(buffer) &&
+            priv->idr_period != GST_CLOCK_TIME_NONE) {
           guint64 running_time = gst_segment_to_running_time(
             priv->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
 
