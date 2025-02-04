@@ -59,7 +59,7 @@ CAPS_HANDLER_SIGNATURE(stream_type)
   u32 stream_type = gf_stream_type_by_name(media);
   if (stream_type == GF_STREAM_UNKNOWN) {
     GST_ELEMENT_ERROR(
-      element, LIBRARY, FAILED, ("Unknown stream type"), (NULL));
+      element, LIBRARY, FAILED, (NULL), ("Unknown stream type"));
     return FALSE;
   }
 
@@ -99,8 +99,8 @@ CAPS_HANDLER_SIGNATURE(codec_id)
     GST_ELEMENT_ERROR(element,
                       STREAM,
                       FAILED,
-                      ("Could not determine codec id for %s/%s", media, codec),
-                      (NULL));
+                      (NULL),
+                      ("Could not determine codec id for %s/%s", media, codec));
     return FALSE;
   }
 
@@ -159,7 +159,7 @@ CAPS_HANDLER_SIGNATURE(width)
   gint width = -1;
   gst_structure_get_int(structure, "width", &width);
   if (width <= 0) {
-    GST_ELEMENT_ERROR(element, LIBRARY, FAILED, ("Invalid width"), (NULL));
+    GST_ELEMENT_ERROR(element, LIBRARY, FAILED, (NULL), ("Invalid width"));
     return FALSE;
   }
 
@@ -179,7 +179,7 @@ CAPS_HANDLER_SIGNATURE(height)
   gint height = -1;
   gst_structure_get_int(structure, "height", &height);
   if (height <= 0) {
-    GST_ELEMENT_ERROR(element, LIBRARY, FAILED, ("Invalid height"), (NULL));
+    GST_ELEMENT_ERROR(element, LIBRARY, FAILED, (NULL), ("Invalid height"));
     return FALSE;
   }
 
@@ -200,7 +200,7 @@ CAPS_HANDLER_SIGNATURE(sample_rate)
   gst_structure_get_int(structure, "rate", &rate);
   if (rate <= 0) {
     GST_ELEMENT_ERROR(
-      element, LIBRARY, FAILED, ("Invalid sample rate"), (NULL));
+      element, LIBRARY, FAILED, (NULL), ("Invalid sample rate"));
     return FALSE;
   }
 
@@ -288,7 +288,7 @@ CAPS_HANDLER_SIGNATURE(decoder_config)
   g_auto(GstBufferMapInfo) map = GST_MAP_INFO_INIT;
   if (!gst_buffer_map(buffer, &map, GST_MAP_READ)) {
     GST_ELEMENT_ERROR(
-      element, STREAM, FAILED, ("Failed to map codec_data buffer"), (NULL));
+      element, STREAM, FAILED, (NULL), ("Failed to map codec_data buffer"));
     return FALSE;
   }
 

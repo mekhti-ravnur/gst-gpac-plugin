@@ -336,7 +336,7 @@ gpac_pid_new(GPAC_SessionContext* sess)
   GF_FilterPid* pid = gf_filter_pid_new(sess->memin);
   if (!pid) {
     GST_ELEMENT_ERROR(
-      sess->element, LIBRARY, FAILED, ("Failed to create new PID"), (NULL));
+      sess->element, LIBRARY, FAILED, (NULL), ("Failed to create new PID"));
     return NULL;
   }
   return pid;

@@ -52,7 +52,7 @@ QUERY_HANDLER_SIGNATURE(duration)
   gboolean ret = gst_pad_peer_query(priv->self, query);
   if (!ret) {
     GST_ELEMENT_ERROR(
-      priv->self, LIBRARY, FAILED, ("Failed to query duration"), (NULL));
+      priv->self, LIBRARY, FAILED, (NULL), ("Failed to query duration"));
     return FALSE;
   }
 

@@ -166,7 +166,7 @@ gpac_prepare_pids(GstElement* element)
           pid = gpac_pid_new(GPAC_SESS_CTX(GPAC_CTX));
           if (G_UNLIKELY(pid == NULL)) {
             GST_ELEMENT_ERROR(
-              element, STREAM, FAILED, ("Failed to create PID"), (NULL));
+              element, STREAM, FAILED, (NULL), ("Failed to create PID"));
             goto fail;
           }
           g_object_set(agg_pad, "pid", pid, NULL);
@@ -178,7 +178,7 @@ gpac_prepare_pids(GstElement* element)
         if (priv->flags) {
           if (G_UNLIKELY(!gpac_pid_reconfigure(element, priv, pid))) {
             GST_ELEMENT_ERROR(
-              element, STREAM, FAILED, ("Failed to reconfigure PID"), (NULL));
+              element, STREAM, FAILED, (NULL), ("Failed to reconfigure PID"));
             goto fail;
           }
           priv->flags = 0;
@@ -201,7 +201,7 @@ gpac_prepare_pids(GstElement* element)
         break;
       case GST_ITERATOR_ERROR:
         GST_ELEMENT_ERROR(
-          element, STREAM, FAILED, ("Failed to iterate over pads"), (NULL));
+          element, STREAM, FAILED, (NULL), ("Failed to iterate over pads"));
         goto fail;
       case GST_ITERATOR_DONE:
         done = TRUE;
@@ -275,14 +275,14 @@ gst_gpac_tf_consume(GstAggregator* agg, Bool is_eos)
       GST_ELEMENT_ERROR(agg,
                         STREAM,
                         FAILED,
-                        ("Failed to finish buffer, ret: %d", flow_ret),
-                        (NULL));
+                        (NULL),
+                        ("Failed to finish buffer, ret: %d", flow_ret));
       return flow_ret;
     }
   }
 
 error:
-  GST_ELEMENT_ERROR(agg, STREAM, FAILED, ("Failed to consume output"), (NULL));
+  GST_ELEMENT_ERROR(agg, STREAM, FAILED, (NULL), ("Failed to consume output"));
   return GST_FLOW_ERROR;
 }
 
@@ -371,7 +371,7 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
 
   // Check and create PIDs if necessary
   if (!gpac_prepare_pids(GST_ELEMENT(agg))) {
-    GST_ELEMENT_ERROR(agg, STREAM, FAILED, ("Failed to prepare PIDs"), (NULL));
+    GST_ELEMENT_ERROR(agg, STREAM, FAILED, (NULL), ("Failed to prepare PIDs"));
     return GST_FLOW_ERROR;
   }
 
@@ -437,8 +437,8 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
               GST_ELEMENT_WARNING(agg,
                                   STREAM,
                                   FAILED,
-                                  ("Failed to push the force key unit event"),
-                                  (NULL));
+                                  (NULL),
+                                  ("Failed to push the force key unit event"));
           }
         }
 
@@ -452,8 +452,8 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
           GST_ELEMENT_ERROR(agg,
                             STREAM,
                             FAILED,
-                            ("Failed to create packet from buffer"),
-                            (NULL));
+                            (NULL),
+                            ("Failed to create packet from buffer"));
           goto next;
         }
 
@@ -471,9 +471,9 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
         GST_ELEMENT_WARNING(agg,
                             STREAM,
                             FAILED,
+                            (NULL),
                             ("Data structure changed during pad iteration, "
-                             "discarding all packets"),
-                            (NULL));
+                             "discarding all packets"));
         g_queue_clear_full(queue, (GDestroyNotify)gf_filter_pck_unref);
         break;
       case GST_ITERATOR_ERROR:
@@ -503,7 +503,7 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
   // Run the filter session
   if (gpac_session_run(GPAC_SESS_CTX(GPAC_CTX)) != GF_OK) {
     GST_ELEMENT_ERROR(
-      agg, STREAM, FAILED, ("Failed to run the GPAC session"), (NULL));
+      agg, STREAM, FAILED, (NULL), ("Failed to run the GPAC session"));
     return GST_FLOW_ERROR;
   }
 
@@ -555,7 +555,7 @@ gst_gpac_tf_request_new_pad(GstElement* element,
   TEMPLATE_CHECK("caption", caption_pad_count)
   {
     GST_ELEMENT_WARNING(
-      agg, STREAM, FAILED, ("This is not our template!"), (NULL));
+      agg, STREAM, FAILED, (NULL), ("This is not our template!"));
     return NULL;
   }
 
@@ -646,14 +646,14 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
       // Check if we have the graph property set
       if (!params->is_single && !GPAC_PROP_CTX(GPAC_CTX)->graph) {
         GST_ELEMENT_ERROR(
-          gpac_tf, STREAM, FAILED, ("Graph property must be set"), (NULL));
+          gpac_tf, STREAM, FAILED, (NULL), ("Graph property must be set"));
         return GST_STATE_CHANGE_FAILURE;
       }
 
       // Convert the properties to arguments
       if (!gpac_apply_properties(GPAC_PROP_CTX(GPAC_CTX))) {
         GST_ELEMENT_ERROR(
-          element, LIBRARY, INIT, ("Failed to apply properties"), (NULL));
+          element, LIBRARY, INIT, (NULL), ("Failed to apply properties"));
         return GST_STATE_CHANGE_FAILURE;
       }
       // Initialize the GPAC context
@@ -661,8 +661,8 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
         GST_ELEMENT_ERROR(element,
                           LIBRARY,
                           INIT,
-                          ("Failed to initialize GPAC context"),
-                          (NULL));
+                          (NULL),
+                          ("Failed to initialize GPAC context"));
         return GST_STATE_CHANGE_FAILURE;
       }
 
@@ -671,8 +671,8 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
         GST_ELEMENT_ERROR(element,
                           LIBRARY,
                           INIT,
-                          ("Failed to initialize GPAC session"),
-                          (NULL));
+                          (NULL),
+                          ("Failed to initialize GPAC session"));
         return GST_STATE_CHANGE_FAILURE;
       }
 
@@ -710,14 +710,14 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
       // Check if the session has an output
       if (!gpac_session_has_output(GPAC_SESS_CTX(GPAC_CTX))) {
         GST_ELEMENT_ERROR(
-          element, STREAM, FAILED, ("Session has no output"), (NULL));
+          element, STREAM, FAILED, (NULL), ("Session has no output"));
         return GST_STATE_CHANGE_FAILURE;
       }
 
       // Initialize the PIDs for all pads
       if (!gpac_prepare_pids(element)) {
         GST_ELEMENT_ERROR(
-          element, LIBRARY, FAILED, ("Failed to prepare PIDs"), (NULL));
+          element, LIBRARY, FAILED, (NULL), ("Failed to prepare PIDs"));
         return GST_STATE_CHANGE_FAILURE;
       }
       break;
@@ -739,7 +739,7 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
       if (!gpac_session_close(GPAC_SESS_CTX(GPAC_CTX),
                               GPAC_PROP_CTX(GPAC_CTX)->print_stats)) {
         GST_ELEMENT_ERROR(
-          element, LIBRARY, SHUTDOWN, ("Failed to close GPAC session"), (NULL));
+          element, LIBRARY, SHUTDOWN, (NULL), ("Failed to close GPAC session"));
         return GST_STATE_CHANGE_FAILURE;
       }
 
@@ -866,8 +866,8 @@ gst_gpac_tf_register(GstPlugin* plugin)
     GST_ELEMENT_ERROR(plugin,
                       STREAM,
                       FAILED,
-                      ("Failed to register regular gpac transform element"),
-                      (NULL));
+                      (NULL),
+                      ("Failed to register regular gpac transform element"));
     return FALSE;
   }
 
@@ -894,8 +894,8 @@ gst_gpac_tf_register(GstPlugin* plugin)
         plugin,
         STREAM,
         FAILED,
-        ("Failed to register %s transform subelement", info->filter_name),
-        (NULL));
+        (NULL),
+        ("Failed to register %s transform subelement", info->filter_name));
       return FALSE;
     }
   }

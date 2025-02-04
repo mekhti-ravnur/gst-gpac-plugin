@@ -59,8 +59,8 @@ TAGS_HANDLER_SIGNATURE(id)
     GST_ELEMENT_ERROR(element,
                       STREAM,
                       FAILED,
-                      ("Container specific track id is too large: %s", id),
-                      (NULL));
+                      (NULL),
+                      ("Container specific track id is too large: %s", id));
     return FALSE;
   }
 
@@ -118,7 +118,7 @@ TAGS_HANDLER_SIGNATURE(language)
   gint32 lang_code = gf_lang_find(language);
   if (lang_code == -1) {
     GST_ELEMENT_WARNING(
-      element, STREAM, FAILED, ("Unknown language code: %s", language), (NULL));
+      element, STREAM, FAILED, (NULL), ("Unknown language code: %s", language));
     return FALSE;
   }
 

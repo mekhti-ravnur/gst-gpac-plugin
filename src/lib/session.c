@@ -183,8 +183,8 @@ gpac_session_open(GPAC_SessionContext* ctx, gchar* graph)
       ctx->element,
       STREAM,
       FAILED,
-      ("Failed to open gpac filter session, session not initialized"),
-      (NULL));
+      (NULL),
+      ("Failed to open gpac filter session, session not initialized"));
     return GF_BAD_PARAM;
   }
 
@@ -201,8 +201,8 @@ gpac_session_open(GPAC_SessionContext* ctx, gchar* graph)
     GST_ELEMENT_ERROR(ctx->element,
                       LIBRARY,
                       FAILED,
-                      ("Memory input filter is missing"),
-                      (NULL));
+                      (NULL),
+                      ("Memory input filter is missing"));
     return GF_BAD_PARAM;
   }
   gf_list_add(loaded_filters, ctx->memin);
@@ -226,8 +226,8 @@ gpac_session_open(GPAC_SessionContext* ctx, gchar* graph)
           ctx->element,
           STREAM,
           FAILED,
-          ("Cannot parse global option within graph: %s", node),
-          (NULL));
+          (NULL),
+          ("Cannot parse global option within graph: %s", node));
       }
     }
 

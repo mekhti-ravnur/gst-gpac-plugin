@@ -91,8 +91,8 @@ gst_gpac_sink_request_new_pad(GstElement* element,
     GST_ELEMENT_ERROR(gpac_sink,
                       STREAM,
                       FAILED,
-                      ("Unable to request pad name from the aggregator"),
-                      (NULL));
+                      (NULL),
+                      ("Unable to request pad name from the aggregator"));
     return NULL;
   }
 

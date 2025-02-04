@@ -71,8 +71,8 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
       GST_ELEMENT_ERROR(sess->element,
                         LIBRARY,
                         INIT,
-                        ("Failed to create memin filter"),
-                        (NULL));
+                        (NULL),
+                        ("Failed to create memin filter"));
       return e;
     }
     gf_filter_set_process_ckb(memio, gpac_default_memin_process_cb);
@@ -82,7 +82,7 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
     memio = sess->memout = gf_fs_load_filter(sess->session, "memout", &e);
     if (!sess->memout) {
       GST_ELEMENT_ERROR(
-        sess->element, LIBRARY, INIT, ("Failed to load memout filter"), (NULL));
+        sess->element, LIBRARY, INIT, (NULL), ("Failed to load memout filter"));
       return e;
     }
   }
@@ -93,8 +93,8 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
     GST_ELEMENT_ERROR(sess->element,
                       LIBRARY,
                       INIT,
-                      ("Failed to allocate memory for runtime user data"),
-                      (NULL));
+                      (NULL),
+                      ("Failed to allocate memory for runtime user data"));
     return GF_OUT_OF_MEM;
   }
   gpac_return_if_fail(gf_filter_set_rt_udta(memio, rt_udta));
@@ -125,8 +125,8 @@ gpac_memio_assign_queue(GPAC_SessionContext* sess,
     GST_ELEMENT_ERROR(sess->element,
                       LIBRARY,
                       FAILED,
-                      ("Failed to get runtime user data"),
-                      (NULL));
+                      (NULL),
+                      ("Failed to get runtime user data"));
     return;
   }
   rt_udta->queue = queue;
@@ -143,8 +143,8 @@ gpac_memio_set_eos(GPAC_SessionContext* sess, gboolean eos)
     GST_ELEMENT_ERROR(sess->element,
                       LIBRARY,
                       FAILED,
-                      ("Failed to get runtime user data"),
-                      (NULL));
+                      (NULL),
+                      ("Failed to get runtime user data"));
     return;
   }
   rt_udta->eos = eos;
@@ -168,8 +168,8 @@ gpac_memio_set_caps(GPAC_SessionContext* sess, GstCaps* caps)
     GST_ELEMENT_ERROR(sess->element,
                       STREAM,
                       FAILED,
-                      ("Failed to convert the caps to GF_FilterCapability"),
-                      (NULL));
+                      (NULL),
+                      ("Failed to convert the caps to GF_FilterCapability"));
     return FALSE;
   }
 
@@ -178,9 +178,9 @@ gpac_memio_set_caps(GPAC_SessionContext* sess, GstCaps* caps)
     GST_ELEMENT_ERROR(sess->element,
                       STREAM,
                       FAILED,
+                      (NULL),
                       ("Failed to set the caps on the memory output filter, "
-                       "reverting to the previous caps"),
-                      (NULL));
+                       "reverting to the previous caps"));
     gf_free(gf_caps);
     gf_filter_override_caps(sess->memout, current_caps, cur_nb_caps);
     return FALSE;
@@ -231,8 +231,8 @@ gpac_memio_set_global_offset(GPAC_SessionContext* sess,
     GST_ELEMENT_ERROR(sess->element,
                       LIBRARY,
                       FAILED,
-                      ("Failed to get runtime user data"),
-                      (NULL));
+                      (NULL),
+                      ("Failed to get runtime user data"));
     return;
   }
 
@@ -247,8 +247,8 @@ gpac_memio_set_global_offset(GPAC_SessionContext* sess,
       sess->element,
       STREAM,
       FAILED,
-      ("Cannot set a global offset smaller than the current one"),
-      (NULL));
+      (NULL),
+      ("Cannot set a global offset smaller than the current one"));
   }
 }
 
@@ -300,8 +300,8 @@ gpac_default_memin_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
         GST_ELEMENT_WARNING(element,
                             STREAM,
                             FAILED,
-                            ("Failed to push the force key unit event"),
-                            (NULL));
+                            (NULL),
+                            ("Failed to push the force key unit event"));
       }
     }
 

@@ -100,7 +100,7 @@ gpac_pck_new_from_buffer(GstBuffer* buffer,
   g_auto(GstBufferMapInfo) map = GST_MAP_INFO_INIT;
   if (G_UNLIKELY(!gst_buffer_map(buffer, &map, GST_MAP_READ))) {
     GST_ELEMENT_ERROR(
-      element, STREAM, FAILED, ("Failed to map buffer"), (NULL));
+      element, STREAM, FAILED, (NULL), ("Failed to map buffer"));
     return NULL;
   }
 
@@ -116,8 +116,8 @@ gpac_pck_new_from_buffer(GstBuffer* buffer,
     GST_ELEMENT_ERROR(element,
                       STREAM,
                       FAILED,
-                      ("Failed to save the buffer ref to the packet"),
-                      (NULL));
+                      (NULL),
+                      ("Failed to save the buffer ref to the packet"));
     gst_buffer_unref(ref);
     gf_filter_pck_unref(packet);
     return NULL;
