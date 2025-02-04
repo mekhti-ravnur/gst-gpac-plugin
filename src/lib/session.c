@@ -144,7 +144,31 @@ gpac_session_run(GPAC_SessionContext* ctx)
   if (!ctx->session)
     return GF_BAD_PARAM;
   gf_filter_post_process_task(ctx->memin);
-  return gf_fs_run(ctx->session);
+
+  GF_Err e = GF_OK;
+  guint32 steps = 100;
+  do {
+    e = gf_fs_run(ctx->session);
+  } while (!gf_fs_is_last_task(ctx->session) && e == GF_OK && steps--);
+
+  // Check errors
+  if ((e = gf_fs_get_last_connect_error(ctx->session)) != GF_OK) {
+    GST_ELEMENT_ERROR(ctx->element,
+                      LIBRARY,
+                      FAILED,
+                      ("Failed to connect filters: %s", gf_error_to_string(e)),
+                      (NULL));
+    return e;
+  }
+  if ((e = gf_fs_get_last_process_error(ctx->session)) != GF_OK) {
+    GST_ELEMENT_ERROR(ctx->element,
+                      LIBRARY,
+                      FAILED,
+                      ("Failed to process filters: %s", gf_error_to_string(e)),
+                      (NULL));
+    return e;
+  }
+  return GF_OK;
 }
 
 GF_Err
