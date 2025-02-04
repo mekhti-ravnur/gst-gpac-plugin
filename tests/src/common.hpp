@@ -4,13 +4,22 @@
 #include <gtest/gtest.h>
 #include <thread>
 
+struct PipelineConfiguration
+{
+  bool use_tee = false;
+  std::string encoder = "x264enc";
+  int num_buffers = 300;
+};
+
 class GstAppSink
 {
 private:
   GstElement* appsink;
 
 public:
-  GstAppSink(GstElement* test_element, GstElement* tee, GstElement* pipeline)
+  GstAppSink(GstElement* test_element,
+             GstElement* connect_from,
+             GstElement* pipeline)
   {
     // Create the elements
     GstElement* queue = gst_element_factory_make("queue", NULL);
@@ -28,7 +37,7 @@ public:
     gst_bin_add_many(GST_BIN(pipeline), queue, test_element, appsink, NULL);
 
     // Link the elements
-    if (!gst_element_link(tee, queue) ||
+    if (!gst_element_link(connect_from, queue) ||
         !gst_element_link(queue, test_element) ||
         !gst_element_link(test_element, appsink)) {
       g_error("Failed to link elements");
@@ -55,38 +64,86 @@ public:
 
 class GstTestFixture : public ::testing::Test
 {
+private:
+  GstElement* source;
+  GstElement* last_element;
+  bool is_eos = false;
+
 protected:
   GstElement* tee;
   GstElement* pipeline;
 
   static void SetUpTestSuite() { gst_init(NULL, NULL); }
   static void TearDownTestSuite() { gst_deinit(); }
+  GstElement* GetLastElement() { return last_element; }
 
   void SetUp() override
   {
-    GstElement* source = gst_element_factory_make_full(
+    source = gst_element_factory_make_full(
       "videotestsrc", "num-buffers", 300, "do-timestamp", TRUE, NULL);
-    GstElement* encoder = gst_element_factory_make_full("x264enc", NULL);
-    tee = gst_element_factory_make("tee", NULL);
 
     // Create the pipeline
     pipeline = gst_pipeline_new("test-pipeline");
-    if (!pipeline || !source || !encoder || !tee) {
+    if (!pipeline || !source) {
       g_error("Failed to create elements");
       return;
     }
 
-    // Build the pipeline
-    gst_bin_add_many(GST_BIN(pipeline), source, encoder, tee, NULL);
-    if (!gst_element_link(source, encoder) || !gst_element_link(encoder, tee)) {
+    // Add the source to the pipeline
+    gst_bin_add_many(GST_BIN(pipeline), source, NULL);
+    last_element = source;
+  }
+
+  void SetUpPipeline(PipelineConfiguration cfg)
+  {
+    // Reconfigure the source
+    g_object_set(source, "num-buffers", cfg.num_buffers, NULL);
+
+    // Create the encoder
+    GstElement* encoder =
+      gst_element_factory_make_full(cfg.encoder.c_str(), NULL);
+    if (!encoder) {
+      g_error("Failed to create elements");
+      return;
+    }
+
+    // Add the encoder to the pipeline
+    gst_bin_add(GST_BIN(pipeline), encoder);
+
+    // Link the encoder to the last element
+    if (!gst_element_link(last_element, encoder)) {
       g_error("Failed to link elements");
       return;
     }
+    last_element = encoder;
+
+    // Add the tee if needed
+    if (cfg.use_tee) {
+      tee = gst_element_factory_make("tee", NULL);
+      if (!tee) {
+        g_error("Failed to create elements");
+        return;
+      }
+
+      gst_bin_add(GST_BIN(pipeline), tee);
+
+      // Link the elements
+      if (!gst_element_link(last_element, tee)) {
+        g_error("Failed to link elements");
+        return;
+      }
+      last_element = tee;
+    }
   }
 
-  void TearDown() override
+  void WaitForEOS()
   {
-    // Wait until error or EOS
+    // Check if already in EOS
+    GstState state;
+    gst_element_get_state(pipeline, &state, NULL, GST_CLOCK_TIME_NONE);
+    if (state == GST_STATE_NULL || is_eos)
+      return;
+
     GstBus* bus = gst_element_get_bus(pipeline);
     GstMessage* msg = gst_bus_timed_pop_filtered(
       bus,
@@ -110,6 +167,7 @@ protected:
           g_free(debug_info);
           break;
         case GST_MESSAGE_EOS:
+          is_eos = true;
           break;
         default:
           // We should not reach here because we only asked for ERRORs and EOS
@@ -121,6 +179,14 @@ protected:
 
     // Free resources
     gst_object_unref(bus);
+  }
+
+  void TearDown() override
+  {
+    // Wait until error or EOS
+    WaitForEOS();
+
+    // Free resources
     gst_element_set_state(pipeline, GST_STATE_NULL);
     gst_object_unref(pipeline);
   }

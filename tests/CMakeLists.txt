@@ -2,8 +2,8 @@
 project(gstgpacplugin_test LANGUAGES CXX)
 enable_testing()
 
-# GoogleTest requires at least C++14
-set(CMAKE_CXX_STANDARD 14)
+# GoogleTest requires at least C++17
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
@@ -45,6 +45,13 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 include_directories(${GSTREAMER_INCLUDE_DIRS} ${GSTREAMER_BASE_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} GTest::gtest_main ${GSTREAMER_LIBRARIES} ${GSTREAMER_BASE_LIBRARIES})
 target_link_directories(${PROJECT_NAME} PUBLIC ${GSTREAMER_LIBRARY_DIRS} ${GSTREAMER_BASE_LIBRARY_DIRS})
+
+# GPAC
+pkg_check_modules(GPAC REQUIRED gpac)
+
+include_directories(${GPAC_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} ${GPAC_LIBRARIES})
+target_link_directories(${PROJECT_NAME} PUBLIC ${GPAC_LIBRARY_DIRS})
 
 # Discover tests
 include(GoogleTest)

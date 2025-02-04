@@ -113,6 +113,9 @@ IsSegmentDelta(GstBuffer* buffer, guint32 expected_segment_size)
 
 TEST_F(GstTestFixture, StructureTest)
 {
+  // Set up the pipeline
+  this->SetUpPipeline({ true, "x264enc" });
+
   // Create test elements
   GstElement* cmafmux = gst_element_factory_make_full(
     "cmafmux", "chunk-duration", GST_SECOND, NULL);
@@ -184,6 +187,9 @@ TEST_F(GstTestFixture, StructureTest)
 
 TEST_F(GstTestFixture, TimingTest)
 {
+  // Set up the pipeline
+  this->SetUpPipeline({ true, "x264enc" });
+
   // Create test elements
   GstElement* cmafmux = gst_element_factory_make_full(
     "cmafmux", "chunk-duration", 5 * GST_SECOND, NULL);
