@@ -16,7 +16,7 @@
         "audiotestsrc",
         "num-buffers=30",
         "!",
-        "faac",
+        "avenc_aac",
         "!",
         "identity",
         "silent=false",
