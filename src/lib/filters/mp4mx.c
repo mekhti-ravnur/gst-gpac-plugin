@@ -317,7 +317,7 @@ mp4mx_create_buffer_list(GF_Filter* filter)
 
   // Copy the mdat header
   GstMemory* mdat_hdr =
-    gst_memory_copy(gst_buffer_peek_memory(GET_TYPE(DATA)->buffer, 0), 0, 8);
+    gst_memory_share(gst_buffer_peek_memory(GET_TYPE(DATA)->buffer, 0), 0, 8);
 
   // Append the memory to the header
   gst_buffer_append_memory(GET_TYPE(HEADER)->buffer, mdat_hdr);
