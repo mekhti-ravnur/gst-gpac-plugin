@@ -405,16 +405,16 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
 
         // Send the key frame request
         if (!GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT) &&
-            GST_BUFFER_PTS_IS_VALID(buffer) &&
-            priv->idr_period != GST_CLOCK_TIME_NONE) {
+            GST_BUFFER_PTS_IS_VALID(buffer)) {
           guint64 running_time = gst_segment_to_running_time(
             priv->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
 
           // Check if this IDR was late
-          if (priv->idr_last != GST_CLOCK_TIME_NONE) {
+          if (priv->idr_last != GST_CLOCK_TIME_NONE &&
+              priv->idr_period != GST_CLOCK_TIME_NONE) {
             guint64 diff = running_time - priv->idr_last;
             diff -= priv->idr_period;
-            if (diff)
+            if (diff > priv->idr_period)
               GST_ELEMENT_WARNING(agg,
                                   STREAM,
                                   FAILED,
