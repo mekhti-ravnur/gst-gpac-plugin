@@ -42,16 +42,9 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 )
 
 # Link libraries
-include_directories(${GSTREAMER_INCLUDE_DIRS} ${GSTREAMER_BASE_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} GTest::gtest_main ${GSTREAMER_LIBRARIES} ${GSTREAMER_BASE_LIBRARIES})
-target_link_directories(${PROJECT_NAME} PUBLIC ${GSTREAMER_LIBRARY_DIRS} ${GSTREAMER_BASE_LIBRARY_DIRS})
-
-# GPAC
-pkg_check_modules(GPAC REQUIRED gpac)
-
-include_directories(${GPAC_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${GPAC_LIBRARIES})
-target_link_directories(${PROJECT_NAME} PUBLIC ${GPAC_LIBRARY_DIRS})
+include_directories(${GSTREAMER_INCLUDE_DIRS} ${GSTREAMER_BASE_INCLUDE_DIRS} ${GPAC_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} GTest::gtest_main ${GSTREAMER_LIBRARIES} ${GSTREAMER_BASE_LIBRARIES} ${GPAC_LIBRARIES})
+target_link_directories(${PROJECT_NAME} PUBLIC ${GSTREAMER_LIBRARY_DIRS} ${GSTREAMER_BASE_LIBRARY_DIRS} ${GPAC_LIBRARY_DIRS})
 
 # Discover tests
 include(GoogleTest)
