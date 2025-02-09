@@ -122,6 +122,9 @@ TEST_F(GstTestFixture, StructureTest)
   GstElement* gpacmp4mx =
     gst_element_factory_make_full("gpacmp4mx", "cdur", 1.0, NULL);
 
+  // Set the GOP size
+  g_object_set(GetEncoder(), "key-int-max", 30, NULL);
+
   // Create element sinks
   GstAppSink* cmafmux_sink = new GstAppSink(cmafmux, tee, pipeline);
   GstAppSink* gpacmp4mx_sink = new GstAppSink(gpacmp4mx, tee, pipeline);
@@ -195,6 +198,9 @@ TEST_F(GstTestFixture, TimingTest)
     "cmafmux", "chunk-duration", 5 * GST_SECOND, NULL);
   GstElement* gpacmp4mx =
     gst_element_factory_make_full("gpacmp4mx", "cdur", 5.0, NULL);
+
+  // Set the GOP size
+  g_object_set(GetEncoder(), "key-int-max", 150, NULL);
 
   // Create element sinks
   GstAppSink* cmafmux_sink = new GstAppSink(cmafmux, tee, pipeline);

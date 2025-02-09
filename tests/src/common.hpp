@@ -66,6 +66,7 @@ class GstTestFixture : public ::testing::Test
 {
 private:
   GstElement* source;
+  GstElement* encoder;
   GstElement* last_element;
   bool is_eos = false;
 
@@ -76,22 +77,34 @@ protected:
   static void SetUpTestSuite() { gst_init(NULL, NULL); }
   static void TearDownTestSuite() { gst_deinit(); }
   GstElement* GetLastElement() { return last_element; }
+  GstElement* GetEncoder() { return encoder; }
 
   void SetUp() override
   {
-    source = gst_element_factory_make_full(
-      "videotestsrc", "num-buffers", 300, "do-timestamp", TRUE, NULL);
+    source =
+      gst_element_factory_make_full("videotestsrc", "do-timestamp", TRUE, NULL);
+    GstElement* capsfilter = gst_element_factory_make_full(
+      "capsfilter",
+      "caps",
+      gst_caps_from_string("video/x-raw, framerate=30/1"),
+      NULL);
 
     // Create the pipeline
     pipeline = gst_pipeline_new("test-pipeline");
-    if (!pipeline || !source) {
+    if (!pipeline || !source || !capsfilter) {
       g_error("Failed to create elements");
       return;
     }
 
     // Add the source to the pipeline
-    gst_bin_add_many(GST_BIN(pipeline), source, NULL);
-    last_element = source;
+    gst_bin_add_many(GST_BIN(pipeline), source, capsfilter, NULL);
+
+    // Link the elements
+    if (!gst_element_link(source, capsfilter)) {
+      g_error("Failed to link elements");
+      return;
+    }
+    last_element = capsfilter;
   }
 
   void SetUpPipeline(PipelineConfiguration cfg)
@@ -100,8 +113,7 @@ protected:
     g_object_set(source, "num-buffers", cfg.num_buffers, NULL);
 
     // Create the encoder
-    GstElement* encoder =
-      gst_element_factory_make_full(cfg.encoder.c_str(), NULL);
+    encoder = gst_element_factory_make_full(cfg.encoder.c_str(), NULL);
     if (!encoder) {
       g_error("Failed to create elements");
       return;
