@@ -25,7 +25,7 @@ jobs:
         with:
           for-test: true
 
-      - name: Install Ugly plugins (for x264enc)
+      - name: Install plugins
         if: ${{ runner.os == 'Linux' }}
         shell: bash
         run: |
@@ -40,8 +40,9 @@ jobs:
 
       # Run the tests
       - name: Test
+        if: ${{ runner.os == 'Linux' }}
         shell: bash
         env:
-          GST_PLUGIN_PATH: ${{ github.workspace}}/build:$HOME/.local/share/gstreamer-1.0/plugins
+          GST_PLUGIN_PATH: ${{ github.workspace }}/build:$HOME/.local/share/gstreamer-1.0/plugins
           GST_DEBUG: 3
         run: ./build/tests/gstgpacplugin_test
