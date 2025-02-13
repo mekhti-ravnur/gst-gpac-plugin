@@ -781,9 +781,11 @@ gst_gpac_tf_finalize(GObject* object)
     g_free(item);
   }
   gf_list_del(ctx->properties);
-  for (u32 i = 0; ctx->props_as_argv[i]; i++)
-    g_free(ctx->props_as_argv[i]);
-  g_free(ctx->props_as_argv);
+  if (ctx->props_as_argv) {
+    for (u32 i = 0; ctx->props_as_argv[i]; i++)
+      g_free(ctx->props_as_argv[i]);
+    g_free(ctx->props_as_argv);
+  }
 
   // Free the queue
   if (gpac_tf->queue) {
