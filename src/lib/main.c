@@ -36,12 +36,4 @@ void
 gpac_destroy(GPAC_Context* ctx)
 {
   gf_sys_close();
-
-  // Free the properties
-  while (gf_list_count(ctx->prop.properties)) {
-    void* item = gf_list_pop_front(ctx->prop.properties);
-    g_free(item);
-  }
-  gf_list_del(ctx->prop.properties);
-  g_free(ctx->prop.props_as_argv);
 }

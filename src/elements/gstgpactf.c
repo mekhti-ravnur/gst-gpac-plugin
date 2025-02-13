@@ -82,14 +82,42 @@ gst_gpac_tf_pad_get_property(GObject* object,
 static void
 gst_gpac_tf_pad_init(GstGpacTransformPad* pad)
 {
+  GpacPadPrivate* priv = g_new0(GpacPadPrivate, 1);
+  priv->self = GST_PAD(pad);
+  priv->idr_period = GST_CLOCK_TIME_NONE;
+  priv->idr_last = GST_CLOCK_TIME_NONE;
+  priv->idr_next = GST_CLOCK_TIME_NONE;
+  gst_pad_set_element_private(GST_PAD(pad), priv);
+
   pad->pid = NULL;
 };
+
+static void
+gst_gpac_tf_pad_finalize(GObject* object)
+{
+  GstGpacTransformPad* pad = GST_GPAC_TF_PAD(object);
+  GpacPadPrivate* priv = gst_pad_get_element_private(GST_PAD(pad));
+
+  if (priv) {
+    if (priv->caps)
+      gst_caps_unref(priv->caps);
+    if (priv->segment)
+      gst_segment_free(priv->segment);
+    if (priv->tags)
+      gst_tag_list_unref(priv->tags);
+    g_free(priv);
+    gst_pad_set_element_private(GST_PAD(pad), NULL);
+  }
+
+  G_OBJECT_CLASS(gst_gpac_tf_pad_parent_class)->finalize(object);
+}
 
 static void
 gst_gpac_tf_pad_class_init(GstGpacTransformPadClass* klass)
 {
   GObjectClass* gobject_class = (GObjectClass*)klass;
 
+  gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_gpac_tf_pad_finalize);
   gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_gpac_tf_pad_set_property);
   gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_gpac_tf_pad_get_property);
 
@@ -343,7 +371,7 @@ gst_gpac_tf_sink_event(GstAggregator* agg,
       gpac_memio_set_eos(GPAC_SESS_CTX(GPAC_CTX), TRUE);
       // fallthrough
     case GST_EVENT_FLUSH_START:
-      gpac_session_flush(GPAC_SESS_CTX(GPAC_CTX));
+      gpac_session_run(GPAC_SESS_CTX(GPAC_CTX), TRUE);
       gst_gpac_tf_consume(agg, GST_EVENT_TYPE(event) == GST_EVENT_EOS);
       break;
 
@@ -501,7 +529,7 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
   g_queue_free(queue);
 
   // Run the filter session
-  if (gpac_session_run(GPAC_SESS_CTX(GPAC_CTX)) != GF_OK) {
+  if (gpac_session_run(GPAC_SESS_CTX(GPAC_CTX), FALSE) != GF_OK) {
     GST_ELEMENT_ERROR(
       agg, STREAM, FAILED, (NULL), ("Failed to run the GPAC session"));
     return GST_FLOW_ERROR;
@@ -570,17 +598,11 @@ gst_gpac_tf_request_new_pad(GstElement* element,
   g_free(name);
 
   // Initialize the private data
-  GpacPadPrivate* priv = g_new0(GpacPadPrivate, 1);
-  priv->self = GST_PAD(pad);
-  priv->idr_period = GST_CLOCK_TIME_NONE;
-  priv->idr_last = GST_CLOCK_TIME_NONE;
-  priv->idr_next = GST_CLOCK_TIME_NONE;
+  GpacPadPrivate* priv = gst_pad_get_element_private(GST_PAD(pad));
   if (caps) {
     priv->caps = gst_caps_copy(caps);
     priv->flags |= GPAC_PAD_CAPS_SET;
   }
-
-  gst_pad_set_element_private(GST_PAD(pad), priv);
 
   return GST_PAD(pad);
 }
@@ -608,12 +630,6 @@ gst_gpac_tf_reset(GstGpacTransform* tf)
 
         // Reset the PID
         g_object_set(GST_AGGREGATOR_PAD(pad), "pid", NULL, NULL);
-
-        // Free the private data
-        if (priv) {
-          g_free(priv);
-          gst_pad_set_element_private(pad, NULL);
-        }
         break;
       }
       case GST_ITERATOR_RESYNC:
@@ -626,10 +642,9 @@ gst_gpac_tf_reset(GstGpacTransform* tf)
   g_value_unset(&item);
   gst_iterator_free(pad_iter);
 
-  if (tf->queue) {
-    g_queue_free(tf->queue);
-    tf->queue = NULL;
-  }
+  // Empty the queue
+  if (tf->queue)
+    g_queue_clear_full(tf->queue, (GDestroyNotify)gf_filter_pck_unref);
 }
 
 static GstStateChangeReturn
@@ -732,8 +747,8 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_NULL:
     case GST_STATE_CHANGE_READY_TO_NULL:
-      // Free the memory input
-      gpac_memio_free(GPAC_SESS_CTX(GPAC_CTX));
+      // Reset the element
+      gst_gpac_tf_reset(gpac_tf);
 
       // Close the session
       if (!gpac_session_close(GPAC_SESS_CTX(GPAC_CTX),
@@ -745,9 +760,6 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
 
       // Destroy the GPAC context
       gpac_destroy(GPAC_CTX);
-
-      // Reset the element
-      gst_gpac_tf_reset(gpac_tf);
       break;
 
     default:
@@ -755,6 +767,32 @@ gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
   }
 
   return ret;
+}
+
+static void
+gst_gpac_tf_finalize(GObject* object)
+{
+  GstGpacTransform* gpac_tf = GST_GPAC_TF(object);
+  GPAC_PropertyContext* ctx = GPAC_PROP_CTX(GPAC_CTX);
+
+  // Free the properties
+  while (gf_list_count(ctx->properties)) {
+    void* item = gf_list_pop_front(ctx->properties);
+    g_free(item);
+  }
+  gf_list_del(ctx->properties);
+  for (u32 i = 0; ctx->props_as_argv[i]; i++)
+    g_free(ctx->props_as_argv[i]);
+  g_free(ctx->props_as_argv);
+
+  // Free the queue
+  if (gpac_tf->queue) {
+    g_assert(g_queue_is_empty(gpac_tf->queue));
+    g_queue_free(gpac_tf->queue);
+    gpac_tf->queue = NULL;
+  }
+
+  G_OBJECT_CLASS(parent_class)->finalize(object);
 }
 
 // #MARK: Initialization
@@ -804,6 +842,9 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
   GstElementClass* gstelement_class = GST_ELEMENT_CLASS(klass);
   GstGpacTransformParams* params =
     g_type_get_qdata(G_OBJECT_CLASS_TYPE(klass), GST_GPAC_TF_PARAMS_QDATA);
+
+  // Set the finalizer
+  gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_gpac_tf_finalize);
 
   // Set the property handlers
   gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_gpac_tf_set_property);

@@ -34,6 +34,9 @@ typedef struct
   GF_FilterSession* session;
   GF_Filter* memin;
   GF_Filter* memout;
+
+  /*< internal >*/
+  gboolean had_data_flow;
 } GPAC_SessionContext;
 
 /*! initializes a gpac filter session
@@ -52,20 +55,13 @@ gpac_session_init(GPAC_SessionContext* ctx, GstElement* element);
 gboolean
 gpac_session_close(GPAC_SessionContext* ctx, gboolean print_stats);
 
-/*! flushes a gpac filter session
-    \param[in] ctx the session context to flush
-    \return GF_OK if the session was flushed successfully, an error code
-   otherwise
-*/
-GF_Err
-gpac_session_flush(GPAC_SessionContext* ctx);
-
 /*! runs a gpac filter session
     \param[in] ctx the session context to run
+    \param[in] flush whether to flush the session
     \return GF_OK if the session was run successfully, an error code otherwise
 */
 GF_Err
-gpac_session_run(GPAC_SessionContext* ctx);
+gpac_session_run(GPAC_SessionContext* ctx, gboolean flush);
 
 /*! opens a gpac filter session
     \param[in] ctx the session context to open

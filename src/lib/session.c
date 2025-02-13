@@ -23,6 +23,7 @@
  *
  */
 #include "lib/session.h"
+#include "lib/memio.h"
 #include <gpac/list.h>
 
 #define SEP_LINK 5
@@ -102,8 +103,10 @@ gboolean
 gpac_session_close(GPAC_SessionContext* ctx, gboolean print_stats)
 {
   if (ctx->session) {
-    // Run the filter chain until the end
-    gpac_session_flush(ctx);
+    if (ctx->had_data_flow) {
+      // Run the filter chain until the end
+      gpac_session_run(ctx, TRUE);
+    }
 
     // Stop the session
     gf_fs_stop(ctx->session);
@@ -116,6 +119,8 @@ gpac_session_close(GPAC_SessionContext* ctx, gboolean print_stats)
       gf_log_set_tools_levels("all@warning", 1);
     }
 
+    gpac_memio_free(ctx);
+
     // Reset the session context
     gf_fs_del(ctx->session);
     ctx->session = NULL;
@@ -125,21 +130,7 @@ gpac_session_close(GPAC_SessionContext* ctx, gboolean print_stats)
 }
 
 GF_Err
-gpac_session_flush(GPAC_SessionContext* ctx)
-{
-  GF_Err e = GF_BAD_PARAM;
-  if (!ctx->session)
-    return e;
-
-  gf_filter_post_process_task(ctx->memin);
-  do {
-    gf_fs_run(ctx->session);
-  } while (!gf_fs_is_last_task(ctx->session));
-  return e;
-}
-
-GF_Err
-gpac_session_run(GPAC_SessionContext* ctx)
+gpac_session_run(GPAC_SessionContext* ctx, gboolean flush)
 {
   if (!ctx->session)
     return GF_BAD_PARAM;
@@ -149,7 +140,8 @@ gpac_session_run(GPAC_SessionContext* ctx)
   guint32 steps = 100;
   do {
     e = gf_fs_run(ctx->session);
-  } while (!gf_fs_is_last_task(ctx->session) && e == GF_OK && steps--);
+  } while (!gf_fs_is_last_task(ctx->session) &&
+           (flush || (e == GF_OK && steps--)));
 
   // Check errors
   if ((e = gf_fs_get_last_connect_error(ctx->session)) != GF_OK) {
@@ -168,6 +160,11 @@ gpac_session_run(GPAC_SessionContext* ctx)
                       (NULL));
     return e;
   }
+
+  // Mark that we had data flow
+  if (!flush)
+    ctx->had_data_flow = TRUE;
+
   return GF_OK;
 }
 

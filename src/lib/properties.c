@@ -362,26 +362,46 @@ gpac_apply_properties(GPAC_PropertyContext* ctx)
   if (!ctx->properties)
     ctx->properties = gf_list_new();
 
-  // Insert a dummy "executable" name
-  gf_list_insert(ctx->properties, gf_strdup("gst"), 0);
-
   // Add the default properties
+  GF_List* override_list = gf_list_new();
   for (u32 i = 0; override_properties[i].name; i++) {
     const GF_GPACArg* arg = &override_properties[i];
     gchar* property = g_strdup_printf("--%s=%s", arg->name, arg->val);
-    gf_list_add(ctx->properties, property);
+    gf_list_add(override_list, property);
   }
 
-  ctx->props_as_argv =
-    (gchar**)g_malloc0_n(gf_list_count(ctx->properties), sizeof(gchar*));
+  // Free the previous arguments
+  if (ctx->props_as_argv) {
+    for (u32 i = 0; ctx->props_as_argv[i]; i++)
+      g_free(ctx->props_as_argv[i]);
+    g_free(ctx->props_as_argv);
+  }
+
+  // Allocate the arguments array (+1 for the executable name)
+  u32 num_properties =
+    1 + gf_list_count(ctx->properties) + gf_list_count(override_list);
+  ctx->props_as_argv = (gchar**)g_malloc0_n(num_properties, sizeof(gchar*));
+
+  // Add the executable name
+  ctx->props_as_argv[0] = g_strdup("gst");
+
   void* item;
-  for (u32 i = 0; (item = gf_list_enum(ctx->properties, &i));)
-    ctx->props_as_argv[i - 1] = (gchar*)item;
+  for (u32 i = 0; i < gf_list_count(ctx->properties); i++) {
+    item = gf_list_get(ctx->properties, i);
+    ctx->props_as_argv[i + 1] = (gchar*)g_strdup(item);
+  }
+  for (u32 i = 0; i < gf_list_count(override_list); i++) {
+    item = gf_list_get(override_list, i);
+    ctx->props_as_argv[i + 1 + gf_list_count(ctx->properties)] = (gchar*)item;
+  }
 
   // Set the gpac system arguments
-  gpac_return_val_if_fail(gf_sys_set_args((s32)gf_list_count(ctx->properties),
-                                          (const char**)ctx->props_as_argv),
-                          FALSE);
+  gpac_return_val_if_fail(
+    gf_sys_set_args((s32)num_properties, (const char**)ctx->props_as_argv),
+    FALSE);
+
+  // Free the override list
+  gf_list_del(override_list);
 
   return TRUE;
 }
