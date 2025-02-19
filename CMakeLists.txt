@@ -49,12 +49,6 @@ target_compile_options(${PROJECT_NAME} PRIVATE
   -Wno-cast-function-type
 )
 
-# Set the library version
-set_target_properties(${PROJECT_NAME} PROPERTIES
-  VERSION ${PROJECT_VERSION}
-  SOVERSION 0 # x-release-please-major
-)
-
 if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
   message(STATUS "Building in Debug mode")
   target_compile_options(${PROJECT_NAME} PRIVATE -g)
