@@ -906,11 +906,8 @@ gst_gpac_tf_register(GstPlugin* plugin)
     GST_TYPE_GPAC_TF, "GstGpacTransformRegular", &subclass_typeinfo, 0);
   g_type_set_qdata(type, GST_GPAC_TF_PARAMS_QDATA, params);
   if (!gst_element_register(plugin, "gpactf", GST_RANK_PRIMARY, type)) {
-    GST_ELEMENT_ERROR(plugin,
-                      STREAM,
-                      FAILED,
-                      (NULL),
-                      ("Failed to register regular gpac transform element"));
+    GST_ERROR_OBJECT(plugin,
+                     "Failed to register regular gpac transform element");
     return FALSE;
   }
 
@@ -933,12 +930,9 @@ gst_gpac_tf_register(GstPlugin* plugin)
       GST_TYPE_GPAC_TF, type_name, &subclass_typeinfo, 0);
     g_type_set_qdata(type, GST_GPAC_TF_PARAMS_QDATA, params);
     if (!gst_element_register(plugin, name, GST_RANK_SECONDARY, type)) {
-      GST_ELEMENT_ERROR(
-        plugin,
-        STREAM,
-        FAILED,
-        (NULL),
-        ("Failed to register %s transform subelement", info->filter_name));
+      GST_ERROR_OBJECT(plugin,
+                       "Failed to register %s transform subelement",
+                       info->filter_name);
       return FALSE;
     }
   }
