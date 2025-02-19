@@ -336,14 +336,23 @@ gpac_default_memout_configure_pid_cb(GF_Filter* filter,
                                      GF_FilterPid* pid,
                                      Bool is_remove)
 {
+  GF_Err e = GF_OK;
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
 
   // Free the previous post-process context
-  if (ctx->ipid) {
+  if (ctx->current_pp) {
     const gchar* source_name = gf_filter_pid_get_filter_name(ctx->ipid);
     post_process_registry_entry* pp_entry =
       gpac_filter_get_post_process_registry_entry(source_name);
-    pp_entry->ctx_free(ctx->process_ctx);
+
+    if (is_remove || ctx->current_pp != pp_entry)
+      pp_entry->ctx_free(ctx->process_ctx);
+  }
+
+  if (is_remove) {
+    ctx->ipid = NULL;
+    ctx->current_pp = NULL;
+    return e;
   }
 
   if (!ctx->ipid) {
@@ -359,8 +368,12 @@ gpac_default_memout_configure_pid_cb(GF_Filter* filter,
   const gchar* source_name = gf_filter_pid_get_filter_name(ctx->ipid);
   post_process_registry_entry* pp_entry =
     gpac_filter_get_post_process_registry_entry(source_name);
-  pp_entry->ctx_init(&ctx->process_ctx);
 
-  // Configure the PID with the new post-process context
-  return pp_entry->configure_pid(filter, pid);
+  if (ctx->current_pp != pp_entry) {
+    pp_entry->ctx_init(&ctx->process_ctx);
+    e = pp_entry->configure_pid(filter, pid);
+    ctx->current_pp = pp_entry;
+  }
+
+  return e;
 }

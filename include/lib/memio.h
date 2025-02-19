@@ -48,6 +48,7 @@ typedef struct
   void* process_ctx;
   guint64 global_offset;
   gboolean is_continuous;
+  post_process_registry_entry* current_pp;
 } GPAC_MemIoContext;
 
 /*! the memory io filter process callback
