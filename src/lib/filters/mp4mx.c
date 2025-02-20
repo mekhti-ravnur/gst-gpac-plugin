@@ -23,6 +23,7 @@
  *
  */
 
+#include "elements/gstgpactf.h"
 #include "lib/filters/filters.h"
 #include "lib/memio.h"
 #include <gpac/internal/isomedia_dev.h>
@@ -269,6 +270,7 @@ GstBufferList*
 mp4mx_create_buffer_list(GF_Filter* filter)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  GstGpacTransform* gpac_tf = GST_GPAC_TF(GST_ELEMENT(ctx->sess->element));
   Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
 
   GstBufferList* buffer_list = gst_buffer_list_new();
@@ -287,9 +289,17 @@ mp4mx_create_buffer_list(GF_Filter* filter)
         // fallthrough
       case HEADER:
         GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_HEADER);
-        if (mp4mx_ctx->segment_count > 0)
+
+        // Prefer global IDR period if set
+        guint64 idr_period = gpac_tf->global_idr_period != 0
+                               ? gpac_tf->global_idr_period
+                               : gpac_tf->gpac_idr_period;
+
+        // Check if mdat starts with a sync sample
+        if (idr_period && GST_BUFFER_PTS(GET_TYPE(type)->buffer) % idr_period) {
           GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer,
                               GST_BUFFER_FLAG_DELTA_UNIT);
+        }
         break;
       case DATA:
         GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_MARKER);

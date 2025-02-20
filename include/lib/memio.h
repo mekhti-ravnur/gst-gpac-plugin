@@ -42,6 +42,7 @@ typedef struct
   GQueue* queue;
   gboolean eos;
   GPAC_MemIoDirection dir;
+  GPAC_SessionContext* sess;
 
   /*< memout-specific >*/
   GF_FilterPid* ipid;

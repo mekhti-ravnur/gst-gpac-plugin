@@ -145,6 +145,21 @@ gst_gpac_tf_set_property(GObject* object,
   g_return_if_fail(GST_IS_GPAC_TF(object));
   if (gpac_set_property(GPAC_PROP_CTX(GPAC_CTX), prop_id, value, pspec))
     return;
+
+  // Handle the element properties
+  if (IS_ELEMENT_PROPERTY(prop_id)) {
+    switch (prop_id) {
+      case GPAC_PROP_SEGDUR:
+        gpac_tf->global_idr_period =
+          ((guint64)g_value_get_float(value)) * GST_SECOND;
+        break;
+
+      default:
+        break;
+    }
+    return;
+  }
+
   G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 }
 
@@ -158,6 +173,21 @@ gst_gpac_tf_get_property(GObject* object,
   g_return_if_fail(GST_IS_GPAC_TF(object));
   if (gpac_get_property(GPAC_PROP_CTX(GPAC_CTX), prop_id, value, pspec))
     return;
+
+  // Handle the element properties
+  if (IS_ELEMENT_PROPERTY(prop_id)) {
+    switch (prop_id) {
+      case GPAC_PROP_SEGDUR:
+        g_value_set_float(value,
+                          ((float)gpac_tf->global_idr_period) / GST_SECOND);
+        break;
+
+      default:
+        break;
+    }
+    return;
+  }
+
   G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 }
 
@@ -437,12 +467,24 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
           guint64 running_time = gst_segment_to_running_time(
             priv->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
 
+          // Decide on which IDR period to use
+          guint64 idr_period = GST_CLOCK_TIME_NONE;
+          if (priv->idr_period != GST_CLOCK_TIME_NONE) {
+            idr_period = priv->idr_period;
+            // Preserve the IDR period sent by gpac
+            gpac_tf->gpac_idr_period = idr_period;
+          }
+
+          // Use the global IDR period if available
+          if (gpac_tf->global_idr_period)
+            idr_period = gpac_tf->global_idr_period;
+
           // Check if this IDR was late
           if (priv->idr_last != GST_CLOCK_TIME_NONE &&
-              priv->idr_period != GST_CLOCK_TIME_NONE) {
+              idr_period != GST_CLOCK_TIME_NONE) {
             guint64 diff = running_time - priv->idr_last;
-            diff -= priv->idr_period;
-            if (diff > priv->idr_period)
+            diff -= idr_period;
+            if (diff > idr_period)
               GST_ELEMENT_WARNING(agg,
                                   STREAM,
                                   FAILED,
@@ -455,8 +497,8 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
           priv->idr_last = running_time;
 
           // If we have an IDR period, send the next IDR request
-          if (priv->idr_period != GST_CLOCK_TIME_NONE) {
-            priv->idr_next = running_time + priv->idr_period;
+          if (idr_period != GST_CLOCK_TIME_NONE) {
+            priv->idr_next = running_time + idr_period;
             GstEvent* gst_event = gst_video_event_new_upstream_force_key_unit(
               priv->idr_next, TRUE, 1);
             GST_DEBUG("Requesting IDR at %" GST_TIME_FORMAT,
@@ -860,10 +902,31 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
     gst_element_class_add_static_pad_template(gstelement_class,
                                               &params->info->src_template);
     gpac_install_filter_properties(gobject_class, params->info->filter_name);
+
+    // Check if we have any filter options to expose
+    for (u32 i = 0; i < G_N_ELEMENTS(filter_options); i++) {
+      filter_option_overrides* opts = &filter_options[i];
+      if (g_strcmp0(opts->filter_name, params->info->filter_name) == 0) {
+        for (u32 j = 0; opts->options[j]; j++) {
+          guint32 prop_id = opts->options[j];
+          gpac_install_local_properties(gobject_class, prop_id, GPAC_PROP_0);
+        }
+        break;
+      }
+    }
   } else {
     gpac_install_src_pad_templates(gstelement_class);
     gpac_install_local_properties(
       gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_NO_OUTPUT, GPAC_PROP_0);
+
+    // We don't know which filters will be used, so we expose all options
+    for (u32 i = 0; i < G_N_ELEMENTS(filter_options); i++) {
+      filter_option_overrides* opts = &filter_options[i];
+      for (u32 j = 0; opts->options[j]; j++) {
+        guint32 prop_id = opts->options[j];
+        gpac_install_local_properties(gobject_class, prop_id, GPAC_PROP_0);
+      }
+    }
   }
 
   // Set the metadata

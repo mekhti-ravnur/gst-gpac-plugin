@@ -55,6 +55,10 @@ struct _GstGpacTransform
   /* GPAC Context */
   GPAC_Context gpac_ctx;
 
+  /* Element specific options */
+  guint64 global_idr_period;
+  guint64 gpac_idr_period;
+
   /* General Pad Information */
   guint32 video_pad_count;
   guint32 audio_pad_count;
@@ -112,6 +116,22 @@ typedef struct
 
 static subelement_info subelements[] = {
   GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS, "cmfc:frag"),
+};
+
+/**
+ * Custom options to expose for the GPAC filters
+ */
+#define GPAC_TF_FILTER_OPTIONS(name, ...)                           \
+  { .filter_name = name, .options = (guint32[]){ __VA_ARGS__, 0 } }
+
+typedef struct
+{
+  const gchar* filter_name;
+  guint32* options;
+} filter_option_overrides;
+
+static filter_option_overrides filter_options[] = {
+  GPAC_TF_FILTER_OPTIONS("mp4mx", GPAC_PROP_SEGDUR),
 };
 
 /**

@@ -108,6 +108,21 @@ gpac_install_local_properties(GObjectClass* gobject_class,
                                G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
         break;
 
+      case GPAC_PROP_SEGDUR:
+        g_object_class_install_property(
+          gobject_class,
+          prop,
+          g_param_spec_float(
+            "segdur",
+            "Segment Duration",
+            "Duration of each segment in seconds. This option is handled from "
+            "the GStreamer side and not relayed to gpac",
+            0,
+            G_MAXFLOAT,
+            0,
+            G_PARAM_READWRITE));
+        break;
+
       default:
         break;
     }
@@ -254,7 +269,7 @@ gpac_set_property(GPAC_PropertyContext* ctx,
   if (!ctx->properties)
     ctx->properties = gf_list_new();
 
-  if (property_id < GPAC_PROP_FILTER_OFFSET) {
+  if (IS_TOP_LEVEL_PROPERTY(property_id)) {
     switch (property_id) {
       case GPAC_PROP_GRAPH:
         g_free(ctx->graph);
@@ -269,8 +284,7 @@ gpac_set_property(GPAC_PropertyContext* ctx,
       default:
         return FALSE;
     }
-  } else if (property_id >= GPAC_PROP_FILTER_OFFSET &&
-             property_id < GPAC_PROP_GLOBAL_OFFSET) {
+  } else if (IS_FILTER_PROPERTY(property_id)) {
     // Get the value as a string
     gchar* value_str;
     if (G_VALUE_HOLDS_STRING(value))
@@ -298,7 +312,7 @@ gpac_set_property(GPAC_PropertyContext* ctx,
     g_free(value_str);
     g_free(param);
     return TRUE;
-  } else {
+  } else if (IS_GLOBAL_PROPERTY(property_id)) {
     // Check if the property is visible and if it is simple
     gboolean is_simple, is_visible;
     gpac_get_property_attributes(pspec, &is_simple, &is_visible);
@@ -316,6 +330,9 @@ gpac_set_property(GPAC_PropertyContext* ctx,
         "--%s=%s", g_param_spec_get_name(pspec), g_value_get_string(value));
       gf_list_add(ctx->properties, property);
     }
+  } else {
+    // Unknown property or not handled here
+    return FALSE;
   }
   return TRUE;
 }
@@ -326,7 +343,7 @@ gpac_get_property(GPAC_PropertyContext* ctx,
                   GValue* value,
                   GParamSpec* pspec)
 {
-  if (property_id < GPAC_PROP_FILTER_OFFSET) {
+  if (IS_TOP_LEVEL_PROPERTY(property_id)) {
     switch (property_id) {
       case GPAC_PROP_GRAPH:
         g_value_set_string(value, ctx->graph);
@@ -340,7 +357,7 @@ gpac_get_property(GPAC_PropertyContext* ctx,
       default:
         return FALSE;
     }
-  } else if (property_id >= GPAC_PROP_GLOBAL_OFFSET) {
+  } else if (IS_GLOBAL_PROPERTY(property_id)) {
     gboolean is_simple, is_visible;
     gpac_get_property_attributes(pspec, &is_simple, &is_visible);
     g_assert(is_visible);
@@ -351,8 +368,13 @@ gpac_get_property(GPAC_PropertyContext* ctx,
       g_value_set_boolean(value, prop_val != NULL);
     else
       g_value_set_string(value, prop_val);
-  } else
+  } else if (IS_ELEMENT_PROPERTY(property_id)) {
+    // Handled in the element
+    return FALSE;
+  } else {
+    // Unknown property or not handled here
     g_warn_if_reached();
+  }
   return TRUE;
 }
 

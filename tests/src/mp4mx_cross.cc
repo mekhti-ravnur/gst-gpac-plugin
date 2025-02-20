@@ -59,10 +59,10 @@ IsSegmentInit(GstBuffer* buffer)
 }
 
 guint32
-IsSegmentHeader(GstBuffer* buffer, bool is_first = false)
+IsSegmentHeader(GstBuffer* buffer, bool is_independent = false)
 {
   // It must only have the following flags
-  if (is_first)
+  if (is_independent)
     EXPECT_FALSE(GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT));
   else
     EXPECT_TRUE(GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT));
@@ -117,13 +117,14 @@ TEST_F(GstTestFixture, StructureTest)
   this->SetUpPipeline({ true, "x264enc" });
 
   // Create test elements
-  GstElement* cmafmux = gst_element_factory_make_full(
-    "cmafmux", "chunk-duration", GST_SECOND, NULL);
-  GstElement* gpacmp4mx =
-    gst_element_factory_make_full("gpacmp4mx", "cdur", 1.0, NULL);
-
-  // Set the GOP size
-  g_object_set(GetEncoder(), "key-int-max", 30, NULL);
+  GstElement* cmafmux = gst_element_factory_make_full("cmafmux",
+                                                      "chunk-duration",
+                                                      GST_SECOND,
+                                                      "fragment-duration",
+                                                      5 * GST_SECOND,
+                                                      NULL);
+  GstElement* gpacmp4mx = gst_element_factory_make_full(
+    "gpacmp4mx", "cdur", 1.0, "segdur", 5.0, NULL);
 
   // Create element sinks
   GstAppSink* cmafmux_sink = new GstAppSink(cmafmux, tee, pipeline);
@@ -153,6 +154,11 @@ TEST_F(GstTestFixture, StructureTest)
       guint32 buffer_count = gst_buffer_list_length(buffer_list);
       bool is_cmaf = buffer_list == cmaf_buffer;
 
+      bool is_independent =
+        GST_BUFFER_PTS(gst_buffer_list_get(buffer_list, 0)) %
+          (5 * GST_SECOND) ==
+        0;
+
 #define GET_NEXT_BUFFER()                        \
   ASSERT_LT(idx, buffer_count);                  \
   buf = gst_buffer_list_get(buffer_list, idx++);
@@ -169,7 +175,7 @@ TEST_F(GstTestFixture, StructureTest)
 
       // Check buffer #1
       GET_NEXT_BUFFER();
-      guint32 data_size = IsSegmentHeader(buf, segment_count == 0);
+      guint32 data_size = IsSegmentHeader(buf, is_independent);
 
       // Check buffer #2...N
       guint32 leftover = data_size;
@@ -194,13 +200,19 @@ TEST_F(GstTestFixture, TimingTest)
   this->SetUpPipeline({ true, "x264enc" });
 
   // Create test elements
-  GstElement* cmafmux = gst_element_factory_make_full(
-    "cmafmux", "chunk-duration", 5 * GST_SECOND, NULL);
-  GstElement* gpacmp4mx =
-    gst_element_factory_make_full("gpacmp4mx", "cdur", 5.0, NULL);
+  GstElement* cmafmux = gst_element_factory_make_full("cmafmux",
+                                                      "chunk-duration",
+                                                      GST_SECOND,
+                                                      "fragment-duration",
+                                                      5 * GST_SECOND,
+                                                      NULL);
+  GstElement* gpacmp4mx = gst_element_factory_make_full(
+    "gpacmp4mx", "cdur", 1.0, "segdur", 5.0, NULL);
 
-  // Set the GOP size
-  g_object_set(GetEncoder(), "key-int-max", 150, NULL);
+  // Disable B-frames
+  // Since gpacmp4mx puts the complete chunk in a single buffer, we need to
+  // disable B-frames to make the comparison fair.
+  g_object_set(GetEncoder(), "b-adapt", FALSE, "bframes", 0, NULL);
 
   // Create element sinks
   GstAppSink* cmafmux_sink = new GstAppSink(cmafmux, tee, pipeline);

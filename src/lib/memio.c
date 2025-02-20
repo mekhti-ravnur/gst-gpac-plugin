@@ -100,6 +100,7 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
   gpac_return_if_fail(gf_filter_set_rt_udta(memio, rt_udta));
   rt_udta->dir = dir;
   rt_udta->global_offset = GST_CLOCK_TIME_NONE;
+  rt_udta->sess = sess;
 
   return e;
 }
