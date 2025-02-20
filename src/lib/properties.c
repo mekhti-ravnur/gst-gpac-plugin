@@ -375,11 +375,17 @@ gpac_apply_properties(GPAC_PropertyContext* ctx)
     for (u32 i = 0; ctx->props_as_argv[i]; i++)
       g_free(ctx->props_as_argv[i]);
     g_free(ctx->props_as_argv);
+    ctx->props_as_argv = NULL;
   }
 
-  // Allocate the arguments array (+1 for the executable name)
+  // Allocate the arguments array
   u32 num_properties =
-    1 + gf_list_count(ctx->properties) + gf_list_count(override_list);
+    gf_list_count(ctx->properties) + gf_list_count(override_list);
+  // +1 for the executable name
+  num_properties++;
+  // +1 for the NULL termination
+  num_properties++;
+
   ctx->props_as_argv = (gchar**)g_malloc0_n(num_properties, sizeof(gchar*));
 
   // Add the executable name
@@ -395,9 +401,12 @@ gpac_apply_properties(GPAC_PropertyContext* ctx)
     ctx->props_as_argv[i + 1 + gf_list_count(ctx->properties)] = (gchar*)item;
   }
 
+  // Add the NULL termination
+  ctx->props_as_argv[num_properties - 1] = NULL;
+
   // Set the gpac system arguments
   gpac_return_val_if_fail(
-    gf_sys_set_args((s32)num_properties, (const char**)ctx->props_as_argv),
+    gf_sys_set_args((s32)num_properties - 1, (const char**)ctx->props_as_argv),
     FALSE);
 
   // Free the override list
