@@ -152,6 +152,9 @@ gst_gpac_tf_set_property(GObject* object,
       case GPAC_PROP_SEGDUR:
         gpac_tf->global_idr_period =
           ((guint64)g_value_get_float(value)) * GST_SECOND;
+        GST_DEBUG_OBJECT(object,
+                         "Set global IDR period to %" GST_TIME_FORMAT,
+                         GST_TIME_ARGS(gpac_tf->global_idr_period));
         break;
 
       default:
@@ -294,6 +297,9 @@ gst_gpac_tf_consume(GstAggregator* agg, Bool is_eos)
 {
   GstFlowReturn flow_ret = GST_FLOW_OK;
   GstGpacTransform* gpac_tf = GST_GPAC_TF(agg);
+  GstSegment* segment = &GST_AGGREGATOR_PAD(agg->srcpad)->segment;
+
+  GST_DEBUG_OBJECT(agg, "Consuming output...");
 
   void* output;
   GPAC_FilterPPRet ret;
@@ -301,6 +307,7 @@ gst_gpac_tf_consume(GstAggregator* agg, Bool is_eos)
     switch (ret) {
       case GPAC_FILTER_PP_RET_EMPTY:
         // No data available
+        GST_DEBUG_OBJECT(agg, "No more data available, exiting");
         return GST_FLOW_OK;
 
       case GPAC_FILTER_PP_RET_ERROR:
@@ -311,20 +318,49 @@ gst_gpac_tf_consume(GstAggregator* agg, Bool is_eos)
         // memout is not connected, just send one dummy buffer
         if (is_eos)
           return GST_FLOW_EOS;
+        GST_DEBUG_OBJECT(
+          agg, "Sending dummy buffer, possibly connected to fakesink");
         return gst_aggregator_finish_buffer(agg, gst_buffer_new());
 
       case GPAC_FILTER_PP_RET_BUFFER:
         // Send the buffer
+        GST_DEBUG_OBJECT(agg, "Sending buffer");
         flow_ret = gst_aggregator_finish_buffer(agg, GST_BUFFER(output));
+        GST_DEBUG_OBJECT(agg, "Buffer sent!");
         break;
 
       case GPAC_FILTER_PP_RET_BUFFER_LIST:
         // Send the buffer list
-        flow_ret =
-          gst_aggregator_finish_buffer_list(agg, GST_BUFFER_LIST(output));
+        GST_DEBUG_OBJECT(agg, "Sending buffer list");
+        GstBufferList* buffer_list = GST_BUFFER_LIST(output);
+        // Show in debug the buffer list pts and dts (running time) and flags
+        for (guint i = 0; i < gst_buffer_list_length(buffer_list); i++) {
+          GstBuffer* buffer = gst_buffer_list_get(buffer_list, i);
+          // Calculate pts and dts in running time
+          guint64 pts = gst_segment_to_running_time(
+            segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
+          guint64 dts = gst_segment_to_running_time(
+            segment, GST_FORMAT_TIME, GST_BUFFER_DTS(buffer));
+          guint64 duration = gst_segment_to_running_time(
+            segment, GST_FORMAT_TIME, GST_BUFFER_DURATION(buffer));
+          GST_DEBUG_OBJECT(
+            agg,
+            "Buffer %d: PTS: %" GST_TIME_FORMAT ", DTS: %" GST_TIME_FORMAT
+            ", Duration: %" GST_TIME_FORMAT ", IsHeader: %s",
+            i,
+            GST_TIME_ARGS(pts),
+            GST_TIME_ARGS(dts),
+            GST_TIME_ARGS(duration),
+            GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_HEADER) ? "Yes"
+                                                                   : "No");
+        }
+        flow_ret = gst_aggregator_finish_buffer_list(agg, buffer_list);
+        GST_DEBUG_OBJECT(agg, "Buffer list sent!");
         break;
 
       default:
+        GST_ELEMENT_WARNING(
+          agg, STREAM, FAILED, (NULL), ("Unknown return value: %d", ret));
         g_warn_if_reached();
         break;
     }
@@ -373,6 +409,13 @@ gst_gpac_tf_sink_event(GstAggregator* agg,
       priv->segment = gst_segment_copy(segment);
       priv->flags |= GPAC_PAD_SEGMENT_SET;
       priv->dts_offset_set = FALSE;
+
+      // Update the segment only if video pad or the only pad
+      gboolean is_video_pad = gst_pad_get_pad_template(GST_PAD(pad)) ==
+                              gst_gpac_get_sink_template(TEMPLATE_VIDEO);
+      gboolean is_only_pad = g_list_length(GST_ELEMENT(agg)->sinkpads) == 1;
+      if (is_video_pad || is_only_pad)
+        gst_aggregator_update_segment(agg, gst_segment_copy(segment));
 
       // Set the global offset
       gpac_memio_set_global_offset(GPAC_SESS_CTX(GPAC_CTX), segment);
@@ -433,6 +476,8 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
     return GST_FLOW_ERROR;
   }
 
+  GST_DEBUG_OBJECT(agg, "Aggregating buffers");
+
   // Create the temporary queue
   GQueue* queue = g_queue_new();
 
@@ -466,6 +511,10 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
             GST_BUFFER_PTS_IS_VALID(buffer)) {
           guint64 running_time = gst_segment_to_running_time(
             priv->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
+
+          GST_DEBUG_OBJECT(agg,
+                           "Key frame received at %" GST_TIME_FORMAT,
+                           GST_TIME_ARGS(running_time));
 
           // Decide on which IDR period to use
           guint64 idr_period = GST_CLOCK_TIME_NONE;
@@ -559,6 +608,7 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
 
   // Check if we have any packets to send
   if (g_queue_is_empty(queue)) {
+    GST_DEBUG_OBJECT(agg, "No packets to send, returning EOS");
     g_queue_free(queue);
     return GST_FLOW_EOS;
   }
@@ -583,26 +633,10 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
 
 // #MARK: Pad Management
 static GstAggregatorPad*
-gst_gpac_tf_create_new_pad(GstAggregator* self,
+gst_gpac_tf_create_new_pad(GstAggregator* element,
                            GstPadTemplate* templ,
-                           const gchar* req_name,
+                           const gchar* pad_name,
                            const GstCaps* caps)
-{
-  return g_object_new(GST_TYPE_GPAC_TF_PAD,
-                      "name",
-                      req_name,
-                      "direction",
-                      templ->direction,
-                      "template",
-                      templ,
-                      NULL);
-}
-
-static GstPad*
-gst_gpac_tf_request_new_pad(GstElement* element,
-                            GstPadTemplate* templ,
-                            const gchar* pad_name,
-                            const GstCaps* caps)
 {
   GstElementClass* klass = GST_ELEMENT_GET_CLASS(element);
   GstGpacTransform* agg = GST_GPAC_TF(element);
@@ -634,9 +668,14 @@ gst_gpac_tf_request_new_pad(GstElement* element,
   GST_DEBUG_OBJECT(agg, "Creating new pad %s", name);
 
   // Create the pad
-  GstGpacTransformPad* pad =
-    (GstGpacTransformPad*)GST_ELEMENT_CLASS(parent_class)
-      ->request_new_pad(element, templ, name, caps);
+  GstGpacTransformPad* pad = g_object_new(GST_TYPE_GPAC_TF_PAD,
+                                          "name",
+                                          name,
+                                          "direction",
+                                          templ->direction,
+                                          "template",
+                                          templ,
+                                          NULL);
   g_free(name);
 
   // Initialize the private data
@@ -646,14 +685,7 @@ gst_gpac_tf_request_new_pad(GstElement* element,
     priv->flags |= GPAC_PAD_CAPS_SET;
   }
 
-  return GST_PAD(pad);
-}
-
-static void
-gst_gpac_tf_release_pad(GstElement* element, GstPad* pad)
-{
-  GST_DEBUG_OBJECT(element, "Releasing pad %s:%s", GST_DEBUG_PAD_NAME(pad));
-  GST_ELEMENT_CLASS(parent_class)->release_pad(element, pad);
+  return GST_AGGREGATOR_PAD(pad);
 }
 
 // #MARK: Lifecycle
@@ -689,126 +721,117 @@ gst_gpac_tf_reset(GstGpacTransform* tf)
     g_queue_clear_full(tf->queue, (GDestroyNotify)gf_filter_pck_unref);
 }
 
-static GstStateChangeReturn
-gst_gpac_tf_change_state(GstElement* element, GstStateChange transition)
+static gboolean
+gst_gpac_tf_start(GstAggregator* aggregator)
 {
-  GstStateChangeReturn ret;
-  GstGpacTransform* gpac_tf = GST_GPAC_TF(element);
+  GstGpacTransform* gpac_tf = GST_GPAC_TF(aggregator);
+  GstElement* element = GST_ELEMENT(aggregator);
+  GObjectClass* klass = G_OBJECT_CLASS(G_TYPE_INSTANCE_GET_CLASS(
+    G_OBJECT(element), GST_TYPE_GPAC_TF, GstGpacTransformClass));
+  GstGpacTransformParams* params = GST_GPAC_TF_GET_PARAMS(klass);
+  GstSegment segment;
+
+  // Check if we have the graph property set
+  if (!params->is_single && !GPAC_PROP_CTX(GPAC_CTX)->graph) {
+    GST_ELEMENT_ERROR(
+      element, STREAM, FAILED, (NULL), ("Graph property must be set"));
+    return FALSE;
+  }
+
+  // Convert the properties to arguments
+  if (!gpac_apply_properties(GPAC_PROP_CTX(GPAC_CTX))) {
+    GST_ELEMENT_ERROR(
+      element, LIBRARY, INIT, (NULL), ("Failed to apply properties"));
+    return FALSE;
+  }
+  // Initialize the GPAC context
+  if (!gpac_init(GPAC_CTX)) {
+    GST_ELEMENT_ERROR(
+      element, LIBRARY, INIT, (NULL), ("Failed to initialize GPAC context"));
+    return FALSE;
+  }
+
+  // Create the session
+  if (!gpac_session_init(GPAC_SESS_CTX(GPAC_CTX), element)) {
+    GST_ELEMENT_ERROR(
+      element, LIBRARY, INIT, (NULL), ("Failed to initialize GPAC session"));
+    return FALSE;
+  }
+
+  // Create the memory input
+  gpac_return_val_if_fail(
+    gpac_memio_new(GPAC_SESS_CTX(GPAC_CTX), GPAC_MEMIO_DIR_IN), FALSE);
+  gpac_memio_assign_queue(
+    GPAC_SESS_CTX(GPAC_CTX), GPAC_MEMIO_DIR_IN, gpac_tf->queue);
+
+  // Open the session
+  gchar* graph = NULL;
+  if (params->is_single) {
+    if (params->info->default_options) {
+      graph = g_strdup_printf(
+        "%s:%s", params->info->filter_name, params->info->default_options);
+    } else {
+      graph = g_strdup(params->info->filter_name);
+    }
+  } else {
+    graph = g_strdup(GPAC_PROP_CTX(GPAC_CTX)->graph);
+  }
+
+  gpac_return_val_if_fail(gpac_session_open(GPAC_SESS_CTX(GPAC_CTX), graph),
+                          FALSE);
+  g_free(graph);
+
+  // Create the memory output
+  if (!GPAC_PROP_CTX(GPAC_CTX)->no_output) {
+    gpac_return_val_if_fail(
+      gpac_memio_new(GPAC_SESS_CTX(GPAC_CTX), GPAC_MEMIO_DIR_OUT), FALSE);
+  }
+
+  // Check if the session has an output
+  if (!gpac_session_has_output(GPAC_SESS_CTX(GPAC_CTX))) {
+    GST_ELEMENT_ERROR(
+      element, STREAM, FAILED, (NULL), ("Session has no output"));
+    return FALSE;
+  }
+
+  // Initialize the PIDs for all pads
+  if (!gpac_prepare_pids(element)) {
+    GST_ELEMENT_ERROR(
+      element, LIBRARY, FAILED, (NULL), ("Failed to prepare PIDs"));
+    return FALSE;
+  }
+  GST_DEBUG_OBJECT(element, "GPAC session started");
+
+  // Initialize the segment
+  gst_segment_init(&segment, GST_FORMAT_TIME);
+  gst_aggregator_update_segment(aggregator, &segment);
+  return TRUE;
+}
+
+static gboolean
+gst_gpac_tf_stop(GstAggregator* aggregator)
+{
+  GstElement* element = GST_ELEMENT(aggregator);
+  GstGpacTransform* gpac_tf = GST_GPAC_TF(aggregator);
   GObjectClass* klass = G_OBJECT_CLASS(G_TYPE_INSTANCE_GET_CLASS(
     G_OBJECT(element), GST_TYPE_GPAC_TF, GstGpacTransformClass));
   GstGpacTransformParams* params = GST_GPAC_TF_GET_PARAMS(klass);
 
-  switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_READY: {
-      // Check if we have the graph property set
-      if (!params->is_single && !GPAC_PROP_CTX(GPAC_CTX)->graph) {
-        GST_ELEMENT_ERROR(
-          gpac_tf, STREAM, FAILED, (NULL), ("Graph property must be set"));
-        return GST_STATE_CHANGE_FAILURE;
-      }
+  // Reset the element
+  gst_gpac_tf_reset(gpac_tf);
 
-      // Convert the properties to arguments
-      if (!gpac_apply_properties(GPAC_PROP_CTX(GPAC_CTX))) {
-        GST_ELEMENT_ERROR(
-          element, LIBRARY, INIT, (NULL), ("Failed to apply properties"));
-        return GST_STATE_CHANGE_FAILURE;
-      }
-      // Initialize the GPAC context
-      if (!gpac_init(GPAC_CTX)) {
-        GST_ELEMENT_ERROR(element,
-                          LIBRARY,
-                          INIT,
-                          (NULL),
-                          ("Failed to initialize GPAC context"));
-        return GST_STATE_CHANGE_FAILURE;
-      }
-
-      // Create the session
-      if (!gpac_session_init(GPAC_SESS_CTX(GPAC_CTX), element)) {
-        GST_ELEMENT_ERROR(element,
-                          LIBRARY,
-                          INIT,
-                          (NULL),
-                          ("Failed to initialize GPAC session"));
-        return GST_STATE_CHANGE_FAILURE;
-      }
-
-      // Create the memory input
-      gpac_return_val_if_fail(
-        gpac_memio_new(GPAC_SESS_CTX(GPAC_CTX), GPAC_MEMIO_DIR_IN),
-        GST_STATE_CHANGE_FAILURE);
-      gpac_memio_assign_queue(
-        GPAC_SESS_CTX(GPAC_CTX), GPAC_MEMIO_DIR_IN, gpac_tf->queue);
-
-      // Open the session
-      gchar* graph = NULL;
-      if (params->is_single) {
-        if (params->info->default_options) {
-          graph = g_strdup_printf(
-            "%s:%s", params->info->filter_name, params->info->default_options);
-        } else {
-          graph = g_strdup(params->info->filter_name);
-        }
-      } else {
-        graph = g_strdup(GPAC_PROP_CTX(GPAC_CTX)->graph);
-      }
-
-      gpac_return_val_if_fail(gpac_session_open(GPAC_SESS_CTX(GPAC_CTX), graph),
-                              GST_STATE_CHANGE_FAILURE);
-      g_free(graph);
-
-      // Create the memory output
-      if (!GPAC_PROP_CTX(GPAC_CTX)->no_output) {
-        gpac_return_val_if_fail(
-          gpac_memio_new(GPAC_SESS_CTX(GPAC_CTX), GPAC_MEMIO_DIR_OUT),
-          GST_STATE_CHANGE_FAILURE);
-      }
-
-      // Check if the session has an output
-      if (!gpac_session_has_output(GPAC_SESS_CTX(GPAC_CTX))) {
-        GST_ELEMENT_ERROR(
-          element, STREAM, FAILED, (NULL), ("Session has no output"));
-        return GST_STATE_CHANGE_FAILURE;
-      }
-
-      // Initialize the PIDs for all pads
-      if (!gpac_prepare_pids(element)) {
-        GST_ELEMENT_ERROR(
-          element, LIBRARY, FAILED, (NULL), ("Failed to prepare PIDs"));
-        return GST_STATE_CHANGE_FAILURE;
-      }
-      break;
-    }
-
-    default:
-      break;
+  // Close the session
+  if (!gpac_session_close(GPAC_SESS_CTX(GPAC_CTX),
+                          GPAC_PROP_CTX(GPAC_CTX)->print_stats)) {
+    GST_ELEMENT_ERROR(
+      element, LIBRARY, SHUTDOWN, (NULL), ("Failed to close GPAC session"));
+    return FALSE;
   }
 
-  ret = GST_ELEMENT_CLASS(parent_class)->change_state(element, transition);
-
-  switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_NULL:
-    case GST_STATE_CHANGE_READY_TO_NULL:
-      // Reset the element
-      gst_gpac_tf_reset(gpac_tf);
-
-      // Close the session
-      if (!gpac_session_close(GPAC_SESS_CTX(GPAC_CTX),
-                              GPAC_PROP_CTX(GPAC_CTX)->print_stats)) {
-        GST_ELEMENT_ERROR(
-          element, LIBRARY, SHUTDOWN, (NULL), ("Failed to close GPAC session"));
-        return GST_STATE_CHANGE_FAILURE;
-      }
-
-      // Destroy the GPAC context
-      gpac_destroy(GPAC_CTX);
-      break;
-
-    default:
-      break;
-  }
-
-  return ret;
+  // Destroy the GPAC context
+  gpac_destroy(GPAC_CTX);
+  GST_DEBUG_OBJECT(element, "GPAC session stopped");
+  return TRUE;
 }
 
 static void
@@ -862,18 +885,14 @@ gst_gpac_tf_class_init(GstGpacTransformClass* klass)
   // Set the pad management functions
   gstaggregator_class->create_new_pad =
     GST_DEBUG_FUNCPTR(gst_gpac_tf_create_new_pad);
-  gstelement_class->request_new_pad =
-    GST_DEBUG_FUNCPTR(gst_gpac_tf_request_new_pad);
-  gstelement_class->release_pad = GST_DEBUG_FUNCPTR(gst_gpac_tf_release_pad);
 
   // Set the aggregator functions
   gstaggregator_class->sink_event = GST_DEBUG_FUNCPTR(gst_gpac_tf_sink_event);
   gstaggregator_class->aggregate = GST_DEBUG_FUNCPTR(gst_gpac_tf_aggregate);
   gstaggregator_class->negotiated_src_caps =
     GST_DEBUG_FUNCPTR(gst_gpac_tf_negotiated_src_caps);
-
-  // Set the fundamental functions
-  gstelement_class->change_state = GST_DEBUG_FUNCPTR(gst_gpac_tf_change_state);
+  gstaggregator_class->start = GST_DEBUG_FUNCPTR(gst_gpac_tf_start);
+  gstaggregator_class->stop = GST_DEBUG_FUNCPTR(gst_gpac_tf_stop);
 
   gst_type_mark_as_plugin_api(GST_TYPE_GPAC_TF_PAD, 0);
 }
