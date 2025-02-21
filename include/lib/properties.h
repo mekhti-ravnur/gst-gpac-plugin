@@ -33,7 +33,8 @@ typedef struct
   gchar* graph;
   gboolean print_stats;
   gboolean no_output;
-  GF_List* properties;
+  GList* properties;
+  GList* blacklist;
 
   /*< private >*/
   gchar** props_as_argv;
@@ -79,10 +80,12 @@ gpac_install_local_properties(GObjectClass* gobject_class,
 
 /*! installs the filter properties as properties of a GObject class
     \param[in] gobject_class the GObject class to install the properties to
+    \param[in] blacklist the list of properties to blacklist
     \param[in] filter_name the name of the filter
 */
 void
 gpac_install_filter_properties(GObjectClass* gobject_class,
+                               GList* blacklist,
                                const gchar* filter_name);
 
 /*! installs the global (gpac-specific) properties as properties of a GObject

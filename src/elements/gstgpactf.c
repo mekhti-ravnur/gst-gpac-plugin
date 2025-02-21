@@ -797,8 +797,41 @@ gst_gpac_tf_start(GstAggregator* aggregator)
   gchar* graph = NULL;
   if (params->is_single) {
     if (params->info->default_options) {
-      graph = g_strdup_printf(
-        "%s:%s", params->info->filter_name, params->info->default_options);
+      GList* props = GPAC_PROP_CTX(GPAC_CTX)->properties;
+      GString* options = g_string_new(NULL);
+
+      // Only override if not set already
+      for (guint32 i = 0; params->info->default_options[i].name; i++) {
+        gboolean found = FALSE;
+
+        for (GList* l = props; l != NULL; l = l->next) {
+          gchar* prop = (gchar*)l->data;
+
+          g_autofree gchar* prefix =
+            g_strdup_printf("--%s", params->info->default_options[i].name);
+          if (g_str_has_prefix(prop, prefix)) {
+            found = TRUE;
+            break;
+          }
+        }
+
+        if (!found) {
+          const gchar* name = params->info->default_options[i].name;
+          const gchar* value = params->info->default_options[i].value;
+          g_string_append_printf(options, "%s=%s:", name, value);
+        }
+      }
+
+      // Remove the trailing colon
+      if (options->len > 0)
+        g_string_truncate(options, options->len - 1);
+
+      if (options->len > 0)
+        graph =
+          g_strdup_printf("%s:%s", params->info->filter_name, options->str);
+      else
+        graph = g_strdup(params->info->filter_name);
+      g_string_free(options, TRUE);
     } else {
       graph = g_strdup(params->info->filter_name);
     }
@@ -870,11 +903,9 @@ gst_gpac_tf_finalize(GObject* object)
   GPAC_PropertyContext* ctx = GPAC_PROP_CTX(GPAC_CTX);
 
   // Free the properties
-  while (gf_list_count(ctx->properties)) {
-    void* item = gf_list_pop_front(ctx->properties);
-    g_free(item);
-  }
-  gf_list_del(ctx->properties);
+  g_list_free(ctx->properties);
+  ctx->properties = NULL;
+
   if (ctx->props_as_argv) {
     for (u32 i = 0; ctx->props_as_argv[i]; i++)
       g_free(ctx->props_as_argv[i]);
@@ -949,7 +980,20 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
   if (params->is_single) {
     gst_element_class_add_static_pad_template(gstelement_class,
                                               &params->info->src_template);
-    gpac_install_filter_properties(gobject_class, params->info->filter_name);
+
+    // Set property blacklist
+    g_autolist(GList) blacklist = NULL;
+    if (params->info->default_options) {
+      filter_option* opt = params->info->default_options;
+      for (u32 i = 0; opt[i].name; i++) {
+        if (opt[i].forced)
+          blacklist = g_list_append(blacklist, g_strdup(opt[i].name));
+      }
+    }
+
+    // Install the filter properties
+    gpac_install_filter_properties(
+      gobject_class, blacklist, params->info->filter_name);
 
     // Check if we have any filter options to expose
     for (u32 i = 0; i < G_N_ELEMENTS(filter_options); i++) {

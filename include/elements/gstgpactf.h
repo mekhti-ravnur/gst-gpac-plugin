@@ -107,16 +107,36 @@ GST_ELEMENT_REGISTER_DECLARE(gpac_tf);
 
 typedef struct
 {
+  const gchar* name;
+  const gchar* value;
+  // If not forced, user can override this option
+  gboolean forced;
+} filter_option;
+
+typedef struct
+{
   const gchar* filter_name;
   // The pad template to constrain the element with
   GstStaticPadTemplate src_template;
   // The default options to apply on the filter
-  const gchar* default_options;
+  filter_option* default_options;
 } subelement_info;
 
-static subelement_info subelements[] = {
-  GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS, "cmfc:frag"),
-};
+#define GPAC_TF_FILTER_OPTION(name, value, forced) { name, value, forced }
+#define GPAC_TF_FILTER_OPTION_ARRAY(...) \
+  (filter_option[])                      \
+  {                                      \
+    __VA_ARGS__,                         \
+    {                                    \
+      NULL, NULL, FALSE                  \
+    }                                    \
+  }
+
+static subelement_info subelements[] = { GPAC_TF_SUBELEMENT(
+  "mp4mx",
+  QT_CAPS,
+  GPAC_TF_FILTER_OPTION_ARRAY(GPAC_TF_FILTER_OPTION("cmaf", "cmfc", FALSE),
+                              GPAC_TF_FILTER_OPTION("store", "frag", FALSE))) };
 
 /**
  * Custom options to expose for the GPAC filters

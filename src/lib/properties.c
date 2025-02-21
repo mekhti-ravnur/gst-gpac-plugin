@@ -137,6 +137,7 @@ gpac_install_local_properties(GObjectClass* gobject_class,
 
 void
 gpac_install_filter_properties(GObjectClass* gobject_class,
+                               GList* blacklist,
                                const gchar* filter_name)
 {
   GF_FilterSession* session = gf_fs_new_defaults(0u);
@@ -167,6 +168,12 @@ gpac_install_filter_properties(GObjectClass* gobject_class,
     if (g_object_class_find_property(gobject_class,
                                      filter->args[option_idx].arg_name))
       goto skip;
+
+    // Check if the option is blacklisted
+    GList* item;
+    for (item = blacklist; item; item = item->next)
+      if (!g_strcmp0(filter->args[option_idx].arg_name, item->data))
+        goto skip;
 
 #define SPEC_INSTALL(type, ...)                                      \
   g_object_class_install_property(                                   \
@@ -266,9 +273,6 @@ gpac_set_property(GPAC_PropertyContext* ctx,
   if (g_param_value_defaults(pspec, value))
     return TRUE;
 
-  if (!ctx->properties)
-    ctx->properties = gf_list_new();
-
   if (IS_TOP_LEVEL_PROPERTY(property_id)) {
     switch (property_id) {
       case GPAC_PROP_GRAPH:
@@ -308,7 +312,7 @@ gpac_set_property(GPAC_PropertyContext* ctx,
 
     // Add the property to the list
     gchar* property = g_strdup_printf("--%s=%s", param, value_str);
-    gf_list_add(ctx->properties, property);
+    ctx->properties = g_list_append(ctx->properties, property);
     g_free(value_str);
     g_free(param);
     return TRUE;
@@ -322,14 +326,13 @@ gpac_set_property(GPAC_PropertyContext* ctx,
       return FALSE;
 
     // Add the property to the list
-    if (is_simple) {
-      gchar* property = g_strdup_printf("-%s", g_param_spec_get_name(pspec));
-      gf_list_add(ctx->properties, property);
-    } else {
-      gchar* property = g_strdup_printf(
+    gchar* property;
+    if (is_simple)
+      property = g_strdup_printf("-%s", g_param_spec_get_name(pspec));
+    else
+      property = g_strdup_printf(
         "--%s=%s", g_param_spec_get_name(pspec), g_value_get_string(value));
-      gf_list_add(ctx->properties, property);
-    }
+    ctx->properties = g_list_append(ctx->properties, property);
   } else {
     // Unknown property or not handled here
     return FALSE;
@@ -381,15 +384,12 @@ gpac_get_property(GPAC_PropertyContext* ctx,
 gboolean
 gpac_apply_properties(GPAC_PropertyContext* ctx)
 {
-  if (!ctx->properties)
-    ctx->properties = gf_list_new();
-
   // Add the default properties
-  GF_List* override_list = gf_list_new();
+  g_autolist(GList) override_list = NULL;
   for (u32 i = 0; override_properties[i].name; i++) {
     const GF_GPACArg* arg = &override_properties[i];
     gchar* property = g_strdup_printf("--%s=%s", arg->name, arg->val);
-    gf_list_add(override_list, property);
+    override_list = g_list_append(override_list, property);
   }
 
   // Free the previous arguments
@@ -402,7 +402,7 @@ gpac_apply_properties(GPAC_PropertyContext* ctx)
 
   // Allocate the arguments array
   u32 num_properties =
-    gf_list_count(ctx->properties) + gf_list_count(override_list);
+    g_list_length(ctx->properties) + g_list_length(override_list);
   // +1 for the executable name
   num_properties++;
   // +1 for the NULL termination
@@ -414,13 +414,13 @@ gpac_apply_properties(GPAC_PropertyContext* ctx)
   ctx->props_as_argv[0] = g_strdup("gst");
 
   void* item;
-  for (u32 i = 0; i < gf_list_count(ctx->properties); i++) {
-    item = gf_list_get(ctx->properties, i);
+  for (u32 i = 0; i < g_list_length(ctx->properties); i++) {
+    item = g_list_nth_data(ctx->properties, i);
     ctx->props_as_argv[i + 1] = (gchar*)g_strdup(item);
   }
-  for (u32 i = 0; i < gf_list_count(override_list); i++) {
-    item = gf_list_get(override_list, i);
-    ctx->props_as_argv[i + 1 + gf_list_count(ctx->properties)] = (gchar*)item;
+  for (u32 i = 0; i < g_list_length(override_list); i++) {
+    item = g_list_nth_data(override_list, i);
+    ctx->props_as_argv[i + 1 + g_list_length(ctx->properties)] = (gchar*)item;
   }
 
   // Add the NULL termination
@@ -430,9 +430,6 @@ gpac_apply_properties(GPAC_PropertyContext* ctx)
   gpac_return_val_if_fail(
     gf_sys_set_args((s32)num_properties - 1, (const char**)ctx->props_as_argv),
     FALSE);
-
-  // Free the override list
-  gf_list_del(override_list);
 
   return TRUE;
 }
