@@ -462,6 +462,87 @@ gst_gpac_tf_negotiated_src_caps(GstAggregator* agg, GstCaps* caps)
   return gpac_memio_set_caps(GPAC_SESS_CTX(GPAC_CTX), caps);
 }
 
+void
+gst_gpac_request_idr(GstAggregator* agg, GstPad* pad, GstBuffer* buffer)
+{
+  GstGpacTransform* gpac_tf = GST_GPAC_TF(GST_ELEMENT(agg));
+  GpacPadPrivate* priv = gst_pad_get_element_private(pad);
+
+  // Skip if this is not a key frame
+  if (GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT))
+    return;
+
+  // Skip if we don't have a valid PTS
+  if (!GST_BUFFER_PTS_IS_VALID(buffer))
+    return;
+
+  // Decide on which IDR period to use
+  guint64 idr_period = GST_CLOCK_TIME_NONE;
+  if (priv->idr_period != GST_CLOCK_TIME_NONE) {
+    idr_period = priv->idr_period;
+    // Preserve the IDR period sent by gpac
+    gpac_tf->gpac_idr_period = idr_period;
+  }
+
+  // Use the global IDR period if available
+  if (gpac_tf->global_idr_period)
+    idr_period = gpac_tf->global_idr_period;
+
+  // Skip if we don't have an IDR period
+  if (idr_period == GST_CLOCK_TIME_NONE)
+    return;
+
+  priv->idr_last = gst_segment_to_running_time(
+    priv->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
+
+  GST_DEBUG_OBJECT(agg,
+                   "Key frame received at %" GST_TIME_FORMAT,
+                   GST_TIME_ARGS(priv->idr_last));
+
+  // If this is the first IDR, request it immediately
+  if (priv->idr_next == GST_CLOCK_TIME_NONE) {
+    priv->idr_next = priv->idr_last + idr_period;
+    goto request;
+  }
+
+  // If this IDR arrived before the next scheduled IDR, ignore
+  if (priv->idr_last < priv->idr_next) {
+    guint64 diff = priv->idr_next - priv->idr_last;
+    GST_DEBUG_OBJECT(agg,
+                     "IDR arrived %" GST_TIME_FORMAT
+                     " before the next IDR on pad %s",
+                     GST_TIME_ARGS(diff),
+                     GST_PAD_NAME(pad));
+    return;
+  }
+
+  // Check if this IDR was on time
+  guint64 diff = priv->idr_last - priv->idr_next;
+  if (diff)
+    GST_ELEMENT_WARNING(agg,
+                        STREAM,
+                        FAILED,
+                        ("IDR was late by %" GST_TIME_FORMAT
+                         " on pad %s, reconsider encoding options",
+                         GST_TIME_ARGS(diff),
+                         GST_PAD_NAME(pad)),
+                        (NULL));
+
+  // Schedule the next IDR at the desired time, regardless of whether current
+  // one was late or not
+  priv->idr_next += idr_period;
+
+request:
+  // Send the next IDR request
+  GstEvent* gst_event =
+    gst_video_event_new_upstream_force_key_unit(priv->idr_next, TRUE, 1);
+  GST_DEBUG_OBJECT(
+    agg, "Requesting IDR at %" GST_TIME_FORMAT, GST_TIME_ARGS(priv->idr_next));
+  if (!gst_pad_push_event(pad, gst_event))
+    GST_ELEMENT_WARNING(
+      agg, STREAM, FAILED, (NULL), ("Failed to push the force key unit event"));
+}
+
 static GstFlowReturn
 gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
 {
@@ -507,59 +588,7 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
         }
 
         // Send the key frame request
-        if (!GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT) &&
-            GST_BUFFER_PTS_IS_VALID(buffer)) {
-          guint64 running_time = gst_segment_to_running_time(
-            priv->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buffer));
-
-          GST_DEBUG_OBJECT(agg,
-                           "Key frame received at %" GST_TIME_FORMAT,
-                           GST_TIME_ARGS(running_time));
-
-          // Decide on which IDR period to use
-          guint64 idr_period = GST_CLOCK_TIME_NONE;
-          if (priv->idr_period != GST_CLOCK_TIME_NONE) {
-            idr_period = priv->idr_period;
-            // Preserve the IDR period sent by gpac
-            gpac_tf->gpac_idr_period = idr_period;
-          }
-
-          // Use the global IDR period if available
-          if (gpac_tf->global_idr_period)
-            idr_period = gpac_tf->global_idr_period;
-
-          // Check if this IDR was late
-          if (priv->idr_last != GST_CLOCK_TIME_NONE &&
-              idr_period != GST_CLOCK_TIME_NONE) {
-            guint64 diff = running_time - priv->idr_last;
-            diff -= idr_period;
-            if (diff > idr_period)
-              GST_ELEMENT_WARNING(agg,
-                                  STREAM,
-                                  FAILED,
-                                  ("IDR was late by %" GST_TIME_FORMAT
-                                   " on pad %s, reconsider the IDR period",
-                                   GST_TIME_ARGS(diff),
-                                   GST_PAD_NAME(pad)),
-                                  (NULL));
-          }
-          priv->idr_last = running_time;
-
-          // If we have an IDR period, send the next IDR request
-          if (idr_period != GST_CLOCK_TIME_NONE) {
-            priv->idr_next = running_time + idr_period;
-            GstEvent* gst_event = gst_video_event_new_upstream_force_key_unit(
-              priv->idr_next, TRUE, 1);
-            GST_DEBUG("Requesting IDR at %" GST_TIME_FORMAT,
-                      GST_TIME_ARGS(priv->idr_next));
-            if (!gst_pad_push_event(pad, gst_event))
-              GST_ELEMENT_WARNING(agg,
-                                  STREAM,
-                                  FAILED,
-                                  (NULL),
-                                  ("Failed to push the force key unit event"));
-          }
-        }
+        gst_gpac_request_idr(agg, pad, buffer);
 
         // Get the PID
         g_object_get(GST_AGGREGATOR_PAD(pad), "pid", &pid, NULL);
