@@ -1,0 +1,30 @@
+---
+# Configure clang-tidy for this project.
+Checks: >
+  -*,
+  abseil-*,
+  bugprone-*,
+  google-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -google-readability-braces-around-statements,
+  -misc-include-cleaner,
+  -misc-unused-*,
+  -readability-braces-around-statements,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity
+
+# Turn all the warnings from the checks above into errors.
+# WarningsAsErrors: "*" # TODO: Enable this when we have fixed all the warnings.
+WarningsAsErrors: ""
+
+HeaderFilterRegex: "(src|include).*\\.h$"
+
+CheckOptions:
+  - { key: readability-identifier-naming.EnumConstantCase, value: UPPER_CASE }
+  - { key: readability-identifier-naming.EnumConstantPrefix, value: GPAC_ }
+  - { key: readability-identifier-naming.EnumConstantSuffix, value: "" }

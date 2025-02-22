@@ -23,6 +23,16 @@ endif()
 # Define allowed values for CMAKE_BUILD_TYPE
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release)
 
+# clang-tidy
+find_program(CLANG_TIDY NAMES clang-tidy)
+
+if(CLANG_TIDY)
+  message(STATUS "clang-tidy found: ${CLANG_TIDY}")
+  set(CMAKE_C_CLANG_TIDY clang-tidy)
+else()
+  message(STATUS "clang-tidy not found, skipping analysis.")
+endif()
+
 # Source
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 file(GLOB_RECURSE SOURCES
@@ -40,6 +50,7 @@ file(GLOB_RECURSE SOURCES
 )
 
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
+set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_COMPILE_COMMANDS ON)
 target_compile_options(${PROJECT_NAME} PRIVATE
   -Wall -Wextra -Werror
   -Wcast-align
@@ -63,14 +74,14 @@ pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0>=1.24)
 pkg_check_modules(GSTREAMER_BASE REQUIRED gstreamer-base-1.0>=1.24)
 pkg_check_modules(GSTREAMER_VIDEO REQUIRED gstreamer-video-1.0>=1.24)
 
-include_directories(${GSTREAMER_INCLUDE_DIRS} ${GSTREAMER_BASE_INCLUDE_DIRS})
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${GSTREAMER_INCLUDE_DIRS} ${GSTREAMER_BASE_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${GSTREAMER_LIBRARIES} ${GSTREAMER_BASE_LIBRARIES} ${GSTREAMER_VIDEO_LIBRARIES})
 target_link_directories(${PROJECT_NAME} PUBLIC ${GSTREAMER_LIBRARY_DIRS} ${GSTREAMER_BASE_LIBRARY_DIRS} ${GSTREAMER_VIDEO_LIBRARY_DIRS})
 
 # GPAC
 pkg_check_modules(GPAC REQUIRED gpac>=2.4)
 
-include_directories(${GPAC_INCLUDE_DIRS})
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${GPAC_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${GPAC_LIBRARIES})
 target_link_directories(${PROJECT_NAME} PUBLIC ${GPAC_LIBRARY_DIRS})
 
