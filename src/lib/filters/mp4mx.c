@@ -100,7 +100,7 @@ mp4mx_ctx_init(void** process_ctx)
   Mp4mxCtx* ctx = (Mp4mxCtx*)*process_ctx;
 
   GST_DEBUG_CATEGORY_INIT(
-    gpac_mp4mx, "gpacmp4mx", 0, "GPAC mp4mx post-processor");
+    gpac_mp4mx, "gpacmp4mxpp", 0, "GPAC mp4mx post-processor");
 
   // Initialize the context
   ctx->output_queue = g_queue_new();
@@ -278,10 +278,11 @@ mp4mx_create_buffer_list(GF_Filter* filter)
 
   // Set the flags
   for (guint type = 0; type < LAST; type++) {
+    if (!GET_TYPE(type)->buffer)
+      continue;
+
     switch (type) {
       case INIT:
-        if (!GET_TYPE(INIT)->is_complete)
-          break;
         GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_HEADER);
 
         if (mp4mx_ctx->segment_count == 0) {
@@ -314,16 +315,16 @@ mp4mx_create_buffer_list(GF_Filter* filter)
   }
 
   // Init only if it's present
-  if (GET_TYPE(INIT)->is_complete) {
+  if (GET_TYPE(INIT)->is_complete && GET_TYPE(INIT)->buffer) {
     GST_DEBUG("Adding init buffer");
     gst_buffer_list_add(buffer_list, GET_TYPE(INIT)->buffer);
 
-    // Init won't have timings set, set it using header
+    // Init won't have timings set, set it using data
     GST_BUFFER_PTS(GET_TYPE(INIT)->buffer) =
-      GST_BUFFER_PTS(GET_TYPE(HEADER)->buffer);
+      GST_BUFFER_PTS(GET_TYPE(DATA)->buffer);
     GST_BUFFER_DTS(GET_TYPE(INIT)->buffer) =
-      GST_BUFFER_DTS(GET_TYPE(HEADER)->buffer) -
-      GST_BUFFER_DURATION(GET_TYPE(HEADER)->buffer);
+      GST_BUFFER_DTS(GET_TYPE(DATA)->buffer) -
+      GST_BUFFER_DURATION(GET_TYPE(DATA)->buffer);
     GST_BUFFER_DURATION(GET_TYPE(INIT)->buffer) = GST_CLOCK_TIME_NONE;
   }
 
@@ -331,14 +332,22 @@ mp4mx_create_buffer_list(GF_Filter* filter)
   GstMemory* mdat_hdr =
     gst_memory_share(gst_buffer_peek_memory(GET_TYPE(DATA)->buffer, 0), 0, 8);
 
-  // Append the memory to the header
-  gst_buffer_append_memory(GET_TYPE(HEADER)->buffer, mdat_hdr);
-
   // Resize the data buffer
   gst_buffer_resize(GET_TYPE(DATA)->buffer, 8, -1);
 
+  // Append the memory to the header or init, whichever is present
+  if (GET_TYPE(HEADER)->buffer)
+    gst_buffer_append_memory(GET_TYPE(HEADER)->buffer, mdat_hdr);
+  else if (GET_TYPE(INIT)->buffer)
+    gst_buffer_append_memory(GET_TYPE(INIT)->buffer, mdat_hdr);
+  else {
+    GST_ERROR("No init or header buffer found");
+    g_assert_not_reached();
+  }
+
   // Add the header and data buffers
-  gst_buffer_list_add(buffer_list, GET_TYPE(HEADER)->buffer);
+  if (GET_TYPE(HEADER)->buffer)
+    gst_buffer_list_add(buffer_list, GET_TYPE(HEADER)->buffer);
   gst_buffer_list_add(buffer_list, GET_TYPE(DATA)->buffer);
 
   // Reset the buffer contents
@@ -439,7 +448,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
   GST_DEBUG("Enqueued GOP #%" G_GUINT32_FORMAT, mp4mx_ctx->segment_count);
 
   // Reset the current type
-  mp4mx_ctx->current_type = HEADER;
+  mp4mx_ctx->current_type = INIT;
 
   return GF_OK;
 }
