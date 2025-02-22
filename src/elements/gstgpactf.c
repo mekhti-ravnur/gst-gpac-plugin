@@ -467,6 +467,7 @@ gst_gpac_request_idr(GstAggregator* agg, GstPad* pad, GstBuffer* buffer)
 {
   GstGpacTransform* gpac_tf = GST_GPAC_TF(GST_ELEMENT(agg));
   GpacPadPrivate* priv = gst_pad_get_element_private(pad);
+  GstEvent* gst_event;
 
   // Skip if this is not a key frame
   if (GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT))
@@ -534,7 +535,7 @@ gst_gpac_request_idr(GstAggregator* agg, GstPad* pad, GstBuffer* buffer)
 
 request:
   // Send the next IDR request
-  GstEvent* gst_event =
+  gst_event =
     gst_video_event_new_upstream_force_key_unit(priv->idr_next, TRUE, 1);
   GST_DEBUG_OBJECT(
     agg, "Requesting IDR at %" GST_TIME_FORMAT, GST_TIME_ARGS(priv->idr_next));
