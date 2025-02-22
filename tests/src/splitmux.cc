@@ -14,7 +14,7 @@ TEST_F(GstTestFixture, SplitMux)
 
   // Create the elements
   GstElement* muxer =
-    gst_element_factory_make_full("gpacmp4mx", "cdur", 5.0, NULL);
+    gst_element_factory_make_full("gpaccmafmux", "cdur", 5.0, NULL);
   GstElement* element = gst_element_factory_make_full("splitmuxsink",
                                                       "muxer",
                                                       muxer,

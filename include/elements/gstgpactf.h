@@ -99,10 +99,18 @@ GST_ELEMENT_REGISTER_DECLARE(gpac_tf);
 /**
  * Subelements
  */
-#define GPAC_TF_SUBELEMENT(name, caps, opts)                      \
-  { .filter_name = name,                                          \
-    .src_template = GST_STATIC_PAD_TEMPLATE(                      \
-      "src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS(caps)), \
+#define GPAC_TF_SUBELEMENT_COMMON(name, caps)                  \
+  .filter_name = name,                                         \
+  .src_template = GST_STATIC_PAD_TEMPLATE(                     \
+    "src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS(caps))
+
+#define GPAC_TF_SUBELEMENT(name, caps, opts) \
+  { .alias_name = name,                      \
+    GPAC_TF_SUBELEMENT_COMMON(name, caps),   \
+    .default_options = opts }
+#define GPAC_TF_SUBELEMENT_AS(alias, name, caps, opts) \
+  { .alias_name = alias,                               \
+    GPAC_TF_SUBELEMENT_COMMON(name, caps),             \
     .default_options = opts }
 
 typedef struct
@@ -115,6 +123,7 @@ typedef struct
 
 typedef struct
 {
+  const gchar* alias_name;
   const gchar* filter_name;
   // The pad template to constrain the element with
   GstStaticPadTemplate src_template;
@@ -132,11 +141,15 @@ typedef struct
     }                                    \
   }
 
-static subelement_info subelements[] = { GPAC_TF_SUBELEMENT(
-  "mp4mx",
-  QT_CAPS,
-  GPAC_TF_FILTER_OPTION_ARRAY(GPAC_TF_FILTER_OPTION("cmaf", "cmfc", FALSE),
-                              GPAC_TF_FILTER_OPTION("store", "frag", FALSE))) };
+static subelement_info subelements[] = {
+  GPAC_TF_SUBELEMENT_AS(
+    "cmafmux",
+    "mp4mx",
+    QT_CMAF_CAPS,
+    GPAC_TF_FILTER_OPTION_ARRAY(GPAC_TF_FILTER_OPTION("cmaf", "cmf2", TRUE),
+                                GPAC_TF_FILTER_OPTION("store", "frag", FALSE))),
+  GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS, NULL)
+};
 
 /**
  * Custom options to expose for the GPAC filters

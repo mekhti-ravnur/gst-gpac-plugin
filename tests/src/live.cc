@@ -5,9 +5,9 @@ TEST_F(GstTestFixture, Live)
   this->SetUpPipeline({ false, "x264enc", 30 });
   this->SetLive(true);
 
-  GstElement* gpacmp4mx =
-    gst_element_factory_make_full("gpacmp4mx", "cdur", 1.0, NULL);
-  GstAppSink* sink = new GstAppSink(gpacmp4mx, GetEncoder(), pipeline);
+  GstElement* gpaccmafmux =
+    gst_element_factory_make_full("gpaccmafmux", "cdur", 1.0, NULL);
+  GstAppSink* sink = new GstAppSink(gpaccmafmux, GetEncoder(), pipeline);
   sink->SetSync(true);
 
   this->StartPipeline();

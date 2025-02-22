@@ -9,7 +9,7 @@ cmake -S . -B build -DENABLE_TESTS=ON
 cmake --build build
 ```
 
-Some tests require [`gst-plugin-fmp4`](https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs) to be built and installed on your system. Follow the instructions in the repository to build and install the plugin. Specifically, the `cmafmux` element is used to cross-validate the output of the `gpacmp4mx` element.
+Some tests require [`gst-plugin-fmp4`](https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs) to be built and installed on your system. Follow the instructions in the repository to build and install the plugin. Specifically, the `cmafmux` element is used to cross-validate the output of the `gpaccmafmux` element.
 
 > [!NOTE]
 > GStreamer documentation describes the plugin search path in detail. You can refer to the [GStreamer documentation](https://gstreamer.freedesktop.org/documentation/gstreamer/gstregistry.html?gi-language=c) to understand how GStreamer searches for plugins.

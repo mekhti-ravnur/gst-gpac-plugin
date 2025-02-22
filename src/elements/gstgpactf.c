@@ -1023,10 +1023,16 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
   }
 
   // Set the metadata
-  const gchar* longname =
-    params->is_single
-      ? g_strdup_printf("gpac %s transformer", params->info->filter_name)
-      : "gpac transformer";
+  const gchar* longname = "gpac transformer";
+  if (params->is_single) {
+    if (!g_strcmp0(params->info->filter_name, params->info->alias_name))
+      longname =
+        g_strdup_printf("gpac %s transformer", params->info->filter_name);
+    else
+      longname = g_strdup_printf("gpac %s (%s) transformer",
+                                 params->info->alias_name,
+                                 params->info->filter_name);
+  }
   gst_element_class_set_static_metadata(
     gstelement_class,
     longname,
@@ -1076,19 +1082,18 @@ gst_gpac_tf_register(GstPlugin* plugin)
     params = g_new0(GstGpacTransformParams, 1);
     params->is_single = TRUE;
     params->info = info;
-    const gchar* name = g_strdup_printf("gpac%s", info->filter_name);
+    const gchar* name = g_strdup_printf("gpac%s", info->alias_name);
     const gchar* type_name =
       g_strdup_printf("GstGpacTransform%c%s",
-                      g_ascii_toupper(info->filter_name[0]),
-                      info->filter_name + 1);
+                      g_ascii_toupper(info->alias_name[0]),
+                      info->alias_name + 1);
 
     type = g_type_register_static(
       GST_TYPE_GPAC_TF, type_name, &subclass_typeinfo, 0);
     g_type_set_qdata(type, GST_GPAC_TF_PARAMS_QDATA, params);
     if (!gst_element_register(plugin, name, GST_RANK_SECONDARY, type)) {
-      GST_ERROR_OBJECT(plugin,
-                       "Failed to register %s transform subelement",
-                       info->filter_name);
+      GST_ERROR_OBJECT(
+        plugin, "Failed to register %s transform subelement", info->alias_name);
       return FALSE;
     }
   }

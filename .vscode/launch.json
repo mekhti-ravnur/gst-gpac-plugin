@@ -185,7 +185,7 @@
         "identity",
         "silent=false",
         "!",
-        "gpacmp4mx",
+        "gpaccmafmux",
         "!",
         "video/quicktime",
         "!",

@@ -126,12 +126,12 @@ TEST_F(GstTestFixture, StructureTest)
                                                       "fragment-duration",
                                                       5 * GST_SECOND,
                                                       NULL);
-  GstElement* gpacmp4mx = gst_element_factory_make_full(
-    "gpacmp4mx", "cdur", 1.0, "segdur", 5.0, NULL);
+  GstElement* gpaccmafmux = gst_element_factory_make_full(
+    "gpaccmafmux", "cdur", 1.0, "segdur", 5.0, NULL);
 
   // Create element sinks
   GstAppSink* cmafmux_sink = new GstAppSink(cmafmux, tee, pipeline);
-  GstAppSink* gpacmp4mx_sink = new GstAppSink(gpacmp4mx, tee, pipeline);
+  GstAppSink* gpaccmafmux_sink = new GstAppSink(gpaccmafmux, tee, pipeline);
 
   // Start the pipeline
   this->StartPipeline();
@@ -140,17 +140,16 @@ TEST_F(GstTestFixture, StructureTest)
   int segment_count = 0;
   while (true) {
     GstBufferList* cmaf_buffer = cmafmux_sink->PopBuffer();
-    GstBufferList* gpacmp4mx_buffer = gpacmp4mx_sink->PopBuffer();
+    GstBufferList* gpaccmaf_buffer = gpaccmafmux_sink->PopBuffer();
 
     // If neither buffer is available, we are done
-    if (!cmaf_buffer && !gpacmp4mx_buffer)
+    if (!cmaf_buffer && !gpaccmaf_buffer)
       break;
 
     // Both buffers should return something
-    ASSERT_TRUE(cmaf_buffer && gpacmp4mx_buffer);
+    ASSERT_TRUE(cmaf_buffer && gpaccmaf_buffer);
 
-    std::vector<GstBufferList*> buffer_lists = { cmaf_buffer,
-                                                 gpacmp4mx_buffer };
+    std::vector<GstBufferList*> buffer_lists = { cmaf_buffer, gpaccmaf_buffer };
     for (GstBufferList* buffer_list : buffer_lists) {
       guint idx = 0;
       GstBuffer* buf;
@@ -209,17 +208,17 @@ TEST_F(GstTestFixture, TimingTest)
                                                       "fragment-duration",
                                                       5 * GST_SECOND,
                                                       NULL);
-  GstElement* gpacmp4mx = gst_element_factory_make_full(
-    "gpacmp4mx", "cdur", 1.0, "segdur", 5.0, NULL);
+  GstElement* gpaccmafmux = gst_element_factory_make_full(
+    "gpaccmafmux", "cdur", 1.0, "segdur", 5.0, NULL);
 
   // Disable B-frames
-  // Since gpacmp4mx puts the complete chunk in a single buffer, we need to
+  // Since gpaccmafmux puts the complete chunk in a single buffer, we need to
   // disable B-frames to make the comparison fair.
   g_object_set(GetEncoder(), "b-adapt", FALSE, "bframes", 0, NULL);
 
   // Create element sinks
   GstAppSink* cmafmux_sink = new GstAppSink(cmafmux, tee, pipeline);
-  GstAppSink* gpacmp4mx_sink = new GstAppSink(gpacmp4mx, tee, pipeline);
+  GstAppSink* gpaccmafmux_sink = new GstAppSink(gpaccmafmux, tee, pipeline);
 
   // Start the pipeline
   this->StartPipeline();
@@ -227,14 +226,14 @@ TEST_F(GstTestFixture, TimingTest)
   // Go through all buffers
   while (true) {
     GstBufferList* cmaf_buffer = cmafmux_sink->PopBuffer();
-    GstBufferList* gpacmp4mx_buffer = gpacmp4mx_sink->PopBuffer();
+    GstBufferList* gpaccmaf_buffer = gpaccmafmux_sink->PopBuffer();
 
     // If neither buffer is available, we are done
-    if (!cmaf_buffer && !gpacmp4mx_buffer)
+    if (!cmaf_buffer && !gpaccmaf_buffer)
       break;
 
     // Both buffers should return something
-    ASSERT_TRUE(cmaf_buffer && gpacmp4mx_buffer);
+    ASSERT_TRUE(cmaf_buffer && gpaccmaf_buffer);
 
 #define GET_NEXT_BUFFER()                        \
   ASSERT_LT(idx, buffer_count);                  \
@@ -242,20 +241,20 @@ TEST_F(GstTestFixture, TimingTest)
 
     // Zip buffer lists
     guint length = std::min(gst_buffer_list_length(cmaf_buffer),
-                            gst_buffer_list_length(gpacmp4mx_buffer));
+                            gst_buffer_list_length(gpaccmaf_buffer));
     for (guint idx = 0; idx < length; idx++) {
       GstBuffer* cmaf_buf = gst_buffer_list_get(cmaf_buffer, idx);
-      GstBuffer* gpacmp4mx_buf = gst_buffer_list_get(gpacmp4mx_buffer, idx);
+      GstBuffer* gpaccmafmux_buf = gst_buffer_list_get(gpaccmaf_buffer, idx);
 
       // Check only the PTS
-      EXPECT_EQ(GST_BUFFER_PTS(cmaf_buf), GST_BUFFER_PTS(gpacmp4mx_buf));
+      EXPECT_EQ(GST_BUFFER_PTS(cmaf_buf), GST_BUFFER_PTS(gpaccmafmux_buf));
 
       // The duration differs because, compared to cmafmux, we are
       // outputting complete segments rather than dividing the mdat across
       // individual buffers by samples.
       if (!GST_BUFFER_FLAG_IS_SET(cmaf_buf, GST_BUFFER_FLAG_DELTA_UNIT)) {
         EXPECT_EQ(GST_BUFFER_DURATION(cmaf_buf),
-                  GST_BUFFER_DURATION(gpacmp4mx_buf));
+                  GST_BUFFER_DURATION(gpaccmafmux_buf));
       }
 
       // For the same reason, the DTS is also not the same.

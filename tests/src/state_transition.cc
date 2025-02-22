@@ -4,7 +4,7 @@ TEST_F(GstTestFixture, StatePausedToNullToPlaying)
 {
   this->SetUpPipeline({ false, "x264enc", 5 });
   GstElement* muxer =
-    gst_element_factory_make_full("gpacmp4mx", "cdur", 5.0, NULL);
+    gst_element_factory_make_full("gpaccmafmux", "cdur", 5.0, NULL);
   GstElement* fake_sink = gst_element_factory_make("fakesink", NULL);
   gst_bin_add_many(GST_BIN(pipeline), muxer, fake_sink, NULL);
 

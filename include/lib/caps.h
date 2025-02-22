@@ -76,8 +76,10 @@
 #define CEA708_CAPS \
   "closedcaption/x-cea-708, format=(string)cdp"
 
-#define QT_CAPS \
-  "video/quicktime, " \
+#define QT_CAPS "video/quicktime"
+
+#define QT_CMAF_CAPS \
+  QT_CAPS ", " \
   "variant=(string)cmaf"
 // clang-format on
 

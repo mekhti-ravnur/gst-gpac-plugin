@@ -20,6 +20,10 @@ The `gpactf` element is an aggregator element that runs the incoming buffers thr
 
 Functions similarly to `gpactf` element, you can assume it's equivalent to `gpactf graph=mp4mx`. Only difference is on how the element is configured. You can use the element options to set the `mp4mx` configuration.
 
+#### Aliases
+
+- **`gpaccmafmux`**: Equivalent to `gpacmp4mx` but enables `store=frag` and `cmaf=cmf2` options.
+
 ### `gpacsink` element
 
 This is again a convenience element that functions similarly to `gpactf` element, except that it's contained under a `GstBin` and connected to `fakesink`. This element is useful for testing purposes.
