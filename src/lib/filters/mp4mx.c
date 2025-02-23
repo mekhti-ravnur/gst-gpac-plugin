@@ -72,7 +72,27 @@ typedef struct
   guint32 box_type;
   guint32 box_size;
   GstBuffer* buffer;
+  gboolean parsed;
 } BoxInfo;
+
+typedef struct
+{
+  guint32 track_id;
+  guint32 timescale;
+  gboolean defaults_present;
+  guint32 default_sample_duration;
+  guint32 default_sample_size;
+  guint32 default_sample_flags;
+} TrackInfo;
+
+typedef struct
+{
+  gboolean is_sync;
+  guint64 size;
+  guint64 pts;
+  guint64 dts;
+  guint64 duration;
+} SampleInfo;
 
 typedef struct
 {
@@ -90,7 +110,10 @@ typedef struct
   BufferContents* contents[3];
 
   // Input context
-  guint32 timescale;
+  guint64 duration;
+  guint64 mp4mx_ts;
+  GHashTable* tracks;
+  GArray* next_samples;
 } Mp4mxCtx;
 
 void
@@ -107,6 +130,11 @@ mp4mx_ctx_init(void** process_ctx)
   ctx->current_type = INIT;
   ctx->segment_count = 0;
   ctx->box_queue = g_queue_new();
+
+  // Allocate tracks and next samples
+  ctx->tracks =
+    g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
+  ctx->next_samples = g_array_new(FALSE, TRUE, sizeof(SampleInfo));
 
   // Initialize the buffer contents
   for (guint i = 0; i < LAST; i++) {
@@ -140,6 +168,10 @@ mp4mx_ctx_free(void* process_ctx)
     g_free(ctx->contents[i]);
   }
 
+  // Free the tracks and next samples
+  g_hash_table_destroy(ctx->tracks);
+  g_array_free(ctx->next_samples, TRUE);
+
   // Free the context
   g_free(ctx);
 }
@@ -151,11 +183,11 @@ mp4mx_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
   Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
 
   // Get the timescale from the PID
-  mp4mx_ctx->timescale = GST_SECOND;
+  mp4mx_ctx->mp4mx_ts = GST_SECOND;
   const GF_PropertyValue* p =
     gf_filter_pid_get_property(pid, GF_PROP_PID_TIMESCALE);
   if (p)
-    mp4mx_ctx->timescale = p->value.uint;
+    mp4mx_ctx->mp4mx_ts = p->value.uint;
 
   return GF_OK;
 }
@@ -180,19 +212,280 @@ mp4mx_is_box_complete(BoxInfo* box)
          gst_buffer_get_size(box->buffer) == box->box_size;
 }
 
+GF_Err
+mp4mx_parse_moov(GF_Filter* filter, GstBuffer* buffer)
+{
+  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+
+  // Map the buffer
+  g_auto(GstBufferMapInfo) map = GST_MAP_INFO_INIT;
+  if (G_UNLIKELY(!gst_buffer_map(buffer, &map, GST_MAP_READ))) {
+    GST_ELEMENT_ERROR(ctx->sess->element,
+                      STREAM,
+                      FAILED,
+                      (NULL),
+                      ("Failed to map moov buffer"));
+    return GF_CORRUPTED_DATA;
+  }
+
+  // Parse the box
+  GF_BitStream* bs = gf_bs_new(map.data, map.size, GF_BITSTREAM_READ);
+  GF_Box* moov = NULL;
+  GF_Err err = gf_isom_box_parse(&moov, bs);
+  if (err != GF_OK) {
+    GST_ELEMENT_ERROR(
+      ctx->sess->element, STREAM, FAILED, (NULL), ("Failed to parse moov box"));
+    return GF_CORRUPTED_DATA;
+  }
+
+  // Check if we have duration in the mvhd box
+  GF_MovieHeaderBox* mvhd = (GF_MovieHeaderBox*)gf_isom_box_find_child(
+    moov->child_boxes, GF_ISOM_BOX_TYPE_MVHD);
+  if (mvhd) {
+    mp4mx_ctx->duration =
+      gf_timestamp_rescale(mvhd->duration, mvhd->timeScale, GST_SECOND);
+  }
+
+  // Go through all tracks
+  guint32 count = gf_list_count(moov->child_boxes);
+  for (guint32 i = 0; i < count; i++) {
+    GF_Box* box = (GF_Box*)gf_list_get(moov->child_boxes, i);
+    if (box->type != GF_ISOM_BOX_TYPE_TRAK)
+      continue;
+
+    // Create new tracks
+    TrackInfo* track = g_new0(TrackInfo, 1);
+
+    // Get the track id
+    GF_TrackHeaderBox* tkhd = (GF_TrackHeaderBox*)gf_isom_box_find_child(
+      box->child_boxes, GF_ISOM_BOX_TYPE_TKHD);
+    track->track_id = tkhd->trackID;
+
+    // Get the timescale
+    GF_Box* mdia =
+      gf_isom_box_find_child(box->child_boxes, GF_ISOM_BOX_TYPE_MDIA);
+    GF_MediaHeaderBox* mdhd = (GF_MediaHeaderBox*)gf_isom_box_find_child(
+      mdia->child_boxes, GF_ISOM_BOX_TYPE_MDHD);
+    track->timescale = mdhd->timeScale;
+
+    GST_DEBUG_OBJECT(ctx->sess->element,
+                     "Found track %d with timescale %d",
+                     track->track_id,
+                     track->timescale);
+
+    // Find the mvex for this track
+    for (guint32 j = 0; j < gf_list_count(moov->child_boxes); j++) {
+      GF_Box* mvex = (GF_Box*)gf_list_get(moov->child_boxes, j);
+      if (mvex->type != GF_ISOM_BOX_TYPE_MVEX)
+        continue;
+
+      // Find the track fragment box
+      GF_TrackExtendsBox* trex = (GF_TrackExtendsBox*)gf_isom_box_find_child(
+        mvex->child_boxes, GF_ISOM_BOX_TYPE_TREX);
+      if (trex->trackID != track->track_id)
+        continue;
+
+      // Set the defaults
+      track->defaults_present = TRUE;
+      track->default_sample_duration = trex->def_sample_duration;
+      track->default_sample_size = trex->def_sample_size;
+      track->default_sample_flags = trex->def_sample_flags;
+
+      GST_DEBUG_OBJECT(ctx->sess->element,
+                       "Found defaults for track %d: duration: %d, size: %d, "
+                       "flags: %d",
+                       track->track_id,
+                       track->default_sample_duration,
+                       track->default_sample_size,
+                       track->default_sample_flags);
+    }
+
+    // Add the track to the hash table
+    g_hash_table_insert(
+      mp4mx_ctx->tracks, GUINT_TO_POINTER(track->track_id), track);
+  }
+
+  // Free the box
+  gf_isom_box_del(moov);
+  gf_bs_del(bs);
+
+  return GF_OK;
+}
+
+GF_Err
+mp4mx_parse_moof(GF_Filter* filter, GstBuffer* buffer)
+{
+  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+
+  // Map the buffer
+  g_auto(GstBufferMapInfo) map = GST_MAP_INFO_INIT;
+  if (G_UNLIKELY(!gst_buffer_map(buffer, &map, GST_MAP_READ))) {
+    GST_ELEMENT_ERROR(ctx->sess->element,
+                      STREAM,
+                      FAILED,
+                      (NULL),
+                      ("Failed to map moof buffer"));
+    return GF_CORRUPTED_DATA;
+  }
+
+  // Parse the box
+  GF_BitStream* bs = gf_bs_new(map.data, map.size, GF_BITSTREAM_READ);
+  GF_Box* moof = NULL;
+  GF_Err err = gf_isom_box_parse(&moof, bs);
+  if (err != GF_OK) {
+    GST_ELEMENT_ERROR(
+      ctx->sess->element, STREAM, FAILED, (NULL), ("Failed to parse moof box"));
+    return GF_CORRUPTED_DATA;
+  }
+
+  // Check if there are multiple tracks
+  guint32 count = 0;
+  for (guint32 i = 0; i < gf_list_count(moof->child_boxes); i++) {
+    GF_Box* box = (GF_Box*)gf_list_get(moof->child_boxes, i);
+    if (box->type == GF_ISOM_BOX_TYPE_TRAF)
+      count++;
+  }
+  if (count > 1) {
+    GST_FIXME_OBJECT(ctx->sess->element,
+                     "Multiple tracks in moof not supported yet");
+    return GF_NOT_SUPPORTED;
+  }
+
+  // Find the required boxes
+  GF_Box* traf =
+    gf_isom_box_find_child(moof->child_boxes, GF_ISOM_BOX_TYPE_TRAF);
+  GF_TrackFragmentHeaderBox* tfhd =
+    (GF_TrackFragmentHeaderBox*)gf_isom_box_find_child(traf->child_boxes,
+                                                       GF_ISOM_BOX_TYPE_TFHD);
+  GF_TFBaseMediaDecodeTimeBox* tfdt =
+    (GF_TFBaseMediaDecodeTimeBox*)gf_isom_box_find_child(traf->child_boxes,
+                                                         GF_ISOM_BOX_TYPE_TFDT);
+  GF_TrackFragmentRunBox* trun =
+    (GF_TrackFragmentRunBox*)gf_isom_box_find_child(traf->child_boxes,
+                                                    GF_ISOM_BOX_TYPE_TRUN);
+
+  // Get the track info
+  TrackInfo* track =
+    g_hash_table_lookup(mp4mx_ctx->tracks, GUINT_TO_POINTER(tfhd->trackID));
+  if (!track) {
+    GST_ERROR_OBJECT(ctx->sess->element, "Track %d not found", tfhd->trackID);
+    return GF_BAD_PARAM;
+  }
+
+  // Declare the defaults
+  guint32 default_sample_duration = track->default_sample_duration;
+  guint32 default_sample_size = track->default_sample_size;
+  guint32 default_sample_flags = track->default_sample_flags;
+
+  // Look at the track fragment header box
+  gboolean default_sample_duration_present = (tfhd->flags & 0x8) == 0x8;
+  gboolean default_sample_size_present = (tfhd->flags & 0x10) == 0x10;
+  gboolean default_sample_flags_present = (tfhd->flags & 0x20) == 0x20;
+
+  if (default_sample_duration_present)
+    default_sample_duration = tfhd->def_sample_duration;
+  if (default_sample_size_present)
+    default_sample_size = tfhd->def_sample_size;
+  if (default_sample_flags_present)
+    default_sample_flags = tfhd->def_sample_flags;
+
+  // Resize the next samples array
+  g_array_set_size(mp4mx_ctx->next_samples, trun->sample_count);
+
+  // Look at all samples
+  for (guint32 i = 0; i < trun->sample_count; i++) {
+    GF_TrunEntry* entry = &trun->samples[i];
+    SampleInfo* sample = &g_array_index(mp4mx_ctx->next_samples, SampleInfo, i);
+
+    // Check if this is a sync sample
+    gboolean first_sample_flags_present = (trun->flags & 0x4) == 0x4;
+    gboolean sample_flags_present = (trun->flags & 0x400) == 0x400;
+
+    u32 flags = 0;
+    if (i == 0 && first_sample_flags_present) {
+      flags = trun->first_sample_flags;
+    } else if (sample_flags_present) {
+      flags = entry->flags;
+    } else if (default_sample_flags_present || track->defaults_present) {
+      flags = default_sample_flags;
+    } else {
+      GST_ERROR_OBJECT(ctx->sess->element, "No sample flags found");
+      return GF_CORRUPTED_DATA;
+    }
+
+    sample->is_sync = GF_ISOM_GET_FRAG_SYNC(flags);
+
+    // Retrieve the sample size and offset
+    gboolean sample_size_present = (trun->flags & 0x200) == 0x200;
+
+    if (sample_size_present) {
+      sample->size = entry->size;
+    } else if (default_sample_size_present || track->defaults_present) {
+      sample->size = default_sample_size;
+    } else {
+      GST_ERROR_OBJECT(ctx->sess->element, "No sample size found");
+      return GF_CORRUPTED_DATA;
+    }
+
+    // Retrieve the sample duration
+    gboolean sample_duration_present = (trun->flags & 0x100) == 0x100;
+
+    guint64 duration = 0;
+    if (sample_duration_present) {
+      duration = entry->Duration;
+    } else if (default_sample_duration_present || track->defaults_present) {
+      duration = default_sample_duration;
+    } else {
+      GST_ERROR_OBJECT(ctx->sess->element, "No sample duration found");
+      return GF_CORRUPTED_DATA;
+    }
+
+    sample->duration =
+      gf_timestamp_rescale(duration, track->timescale, GST_SECOND);
+
+    // Retrieve the sample DTS
+    guint64 dts = tfdt->baseMediaDecodeTime + i;
+    sample->dts = gf_timestamp_rescale(dts, track->timescale, GST_SECOND);
+    sample->dts += ctx->global_offset;
+
+    // Retrieve the sample PTS
+    guint64 pts = dts + entry->CTS_Offset;
+    sample->pts = gf_timestamp_rescale(pts, track->timescale, GST_SECOND);
+    sample->pts += ctx->global_offset;
+
+    GST_DEBUG_OBJECT(ctx->sess->element,
+                     "\nSample %d [%s]: size: %ld, "
+                     "duration: %" GST_TIME_FORMAT ", "
+                     "DTS: %" GST_TIME_FORMAT ", "
+                     "PTS: %" GST_TIME_FORMAT "\n",
+                     i,
+                     sample->is_sync ? "S" : "NS",
+                     sample->size,
+                     GST_TIME_ARGS(sample->duration),
+                     GST_TIME_ARGS(sample->dts),
+                     GST_TIME_ARGS(sample->pts));
+  }
+
+  // Free the box
+  gf_isom_box_del(moof);
+  gf_bs_del(bs);
+
+  return GF_OK;
+}
+
 gboolean
 mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
   Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
 
-  // Declare variables
-  gboolean need_more_data = FALSE;
-
   // Get the data
   u32 size;
   const u8* data = gf_filter_pck_get_data(pck, &size);
-  GST_DEBUG("Processing data of size %" G_GUINT32_FORMAT, size);
+  GST_DEBUG_OBJECT(
+    ctx->sess->element, "Processing data of size %" G_GUINT32_FORMAT, size);
 
   guint32 offset = 0;
   while (offset < size) {
@@ -207,9 +500,11 @@ mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
       guint32 leftover =
         MIN(box->box_size - gst_buffer_get_size(box->buffer), size - offset);
       if (gst_buffer_get_size(box->buffer) > 0)
-        GST_DEBUG("Incomplete box %s, appending %" G_GUINT32_FORMAT " bytes",
-                  gf_4cc_to_str(box->box_type),
-                  leftover);
+        GST_DEBUG_OBJECT(ctx->sess->element,
+                         "Incomplete box %s, appending %" G_GUINT32_FORMAT
+                         " bytes",
+                         gf_4cc_to_str(box->box_type),
+                         leftover);
       GstMemory* mem = mp4mx_create_memory(data + offset, leftover, pck);
 
       // Append the memory to the buffer
@@ -217,11 +512,12 @@ mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
 
       // Update the offset
       offset += leftover;
-      GST_DEBUG("Wrote %" G_GSIZE_FORMAT " bytes of %" G_GUINT32_FORMAT
-                " for box %s",
-                gst_buffer_get_size(box->buffer),
-                box->box_size,
-                gf_4cc_to_str(box->box_type));
+      GST_DEBUG_OBJECT(ctx->sess->element,
+                       "Wrote %" G_GSIZE_FORMAT " bytes of %" G_GUINT32_FORMAT
+                       " for box %s",
+                       gst_buffer_get_size(box->buffer),
+                       box->box_size,
+                       gf_4cc_to_str(box->box_type));
       continue;
     }
 
@@ -232,38 +528,48 @@ mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
     box->box_type =
       GUINT32_FROM_LE((data[offset + 4] << 24) | (data[offset + 5] << 16) |
                       (data[offset + 6] << 8) | data[offset + 7]);
-    GST_DEBUG("Saw box %s with size %" G_GUINT32_FORMAT,
-              gf_4cc_to_str(box->box_type),
-              box->box_size);
+    GST_DEBUG_OBJECT(ctx->sess->element,
+                     "Saw box %s with size %" G_GUINT32_FORMAT,
+                     gf_4cc_to_str(box->box_type),
+                     box->box_size);
 
     // Create a new buffer
     box->buffer = gst_buffer_new();
 
-    // Calculate the PTS
-    if (gf_filter_pck_get_cts(pck) != GF_FILTER_NO_TS) {
-      guint64 pts = gf_timestamp_rescale(
-        gf_filter_pck_get_cts(pck), mp4mx_ctx->timescale, GST_SECOND);
-      pts += ctx->global_offset;
-      GST_BUFFER_PTS(box->buffer) = pts;
-    }
-
-    // Calculate the DTS
-    if (gf_filter_pck_get_dts(pck) != GF_FILTER_NO_TS) {
-      guint64 dts = gf_timestamp_rescale(
-        gf_filter_pck_get_dts(pck), mp4mx_ctx->timescale, GST_SECOND);
-      dts += ctx->global_offset;
-      GST_BUFFER_DTS(box->buffer) = dts;
-    }
-
-    // Calculate the duration
-    guint64 duration = gf_timestamp_rescale(
-      gf_filter_pck_get_duration(pck), mp4mx_ctx->timescale, GST_SECOND);
-    GST_BUFFER_DURATION(box->buffer) = duration;
+    // Preserve the timing information
+    GST_BUFFER_PTS(box->buffer) = gf_filter_pck_get_cts(pck);
+    GST_BUFFER_DTS(box->buffer) = gf_filter_pck_get_dts(pck);
+    GST_BUFFER_DURATION(box->buffer) = gf_filter_pck_get_duration(pck);
   }
 
   // Check if process can continue
   BoxInfo* box = g_queue_peek_head(mp4mx_ctx->box_queue);
-  return mp4mx_is_box_complete(box);
+  if (!mp4mx_is_box_complete(box))
+    return FALSE;
+
+  // Check if we need any further parsing
+  for (guint i = 0; i < g_queue_get_length(mp4mx_ctx->box_queue); i++) {
+    BoxInfo* box = g_queue_peek_nth(mp4mx_ctx->box_queue, i);
+    if (!mp4mx_is_box_complete(box) || box->parsed)
+      continue;
+
+    switch (box->box_type) {
+      case GF_ISOM_BOX_TYPE_MOOV:
+        gpac_return_val_if_fail(mp4mx_parse_moov(filter, box->buffer), FALSE);
+        break;
+
+      case GF_ISOM_BOX_TYPE_MOOF:
+        gpac_return_val_if_fail(mp4mx_parse_moof(filter, box->buffer), FALSE);
+        break;
+
+      default:
+        break;
+    }
+
+    box->parsed = TRUE;
+  }
+
+  return TRUE;
 }
 
 GstBufferList*
@@ -273,82 +579,231 @@ mp4mx_create_buffer_list(GF_Filter* filter)
   GstGpacTransform* gpac_tf = GST_GPAC_TF(GST_ELEMENT(ctx->sess->element));
   Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
 
+  // Check if the init and header buffers are present
+  gboolean init_present = GET_TYPE(INIT)->is_complete && GET_TYPE(INIT)->buffer;
+  gboolean header_present =
+    GET_TYPE(HEADER)->is_complete && GET_TYPE(HEADER)->buffer;
+
+  // Declare variables
+  gboolean segment_boundary = FALSE;
+
+  // Create a new buffer list
   GstBufferList* buffer_list = gst_buffer_list_new();
-  GST_DEBUG("GOP complete");
+  GST_DEBUG_OBJECT(ctx->sess->element, "GOP completed");
 
-  // Set the flags
-  for (guint type = 0; type < LAST; type++) {
-    if (!GET_TYPE(type)->buffer)
-      continue;
+  //
+  // Split the DATA buffer into samples, if we have the sample information
+  //
 
-    switch (type) {
-      case INIT:
-        GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_HEADER);
+  // Copy the data as is if we don't have sample information
+  gboolean has_sample_info = mp4mx_ctx->next_samples->len > 0;
+  if (!has_sample_info) {
+    GST_DEBUG_OBJECT(
+      ctx->sess->element,
+      "No sample information found, appending data buffer as is");
 
-        if (mp4mx_ctx->segment_count == 0) {
-          GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_DISCONT);
-          ctx->is_continuous = TRUE;
-        }
-        break;
-      case HEADER:
-        GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_HEADER);
+    // Set the flags
+    GST_BUFFER_FLAG_SET(GET_TYPE(DATA)->buffer, GST_BUFFER_FLAG_MARKER);
+    GST_BUFFER_FLAG_SET(GET_TYPE(DATA)->buffer, GST_BUFFER_FLAG_DELTA_UNIT);
 
-        // Prefer global IDR period if set
-        guint64 idr_period = gpac_tf->global_idr_period != 0
-                               ? gpac_tf->global_idr_period
-                               : gpac_tf->gpac_idr_period;
+    // size of the data buffer
+    guint64 size = gst_buffer_get_size(GET_TYPE(DATA)->buffer);
 
-        // Check if mdat starts with a sync sample
-        if (idr_period && GST_BUFFER_PTS(GET_TYPE(type)->buffer) % idr_period) {
-          GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer,
-                              GST_BUFFER_FLAG_DELTA_UNIT);
-        }
-        break;
-      case DATA:
-        GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_MARKER);
-        GST_BUFFER_FLAG_SET(GET_TYPE(type)->buffer, GST_BUFFER_FLAG_DELTA_UNIT);
-        break;
+    // We have to rely on mp4mx timing information
 
-      default:
-        break;
-    }
+    // PTS
+    guint64 pts = gf_timestamp_rescale(
+      GST_BUFFER_PTS(GET_TYPE(DATA)->buffer), mp4mx_ctx->mp4mx_ts, GST_SECOND);
+    pts += ctx->global_offset;
+    GST_BUFFER_PTS(GET_TYPE(DATA)->buffer) = pts;
+
+    // DTS
+    guint64 dts = gf_timestamp_rescale(
+      GST_BUFFER_DTS(GET_TYPE(DATA)->buffer), mp4mx_ctx->mp4mx_ts, GST_SECOND);
+    dts += ctx->global_offset;
+    GST_BUFFER_DTS(GET_TYPE(DATA)->buffer) = dts;
+
+    // Duration
+    // For duration, we have to use mvhd since we don't parse the moov for
+    // sample informations
+    GST_BUFFER_DURATION(GET_TYPE(DATA)->buffer) = mp4mx_ctx->duration;
+
+    gst_buffer_list_add(buffer_list, GET_TYPE(DATA)->buffer);
+    goto headers;
   }
 
-  // Init only if it's present
-  if (GET_TYPE(INIT)->is_complete && GET_TYPE(INIT)->buffer) {
-    GST_DEBUG("Adding init buffer");
-    gst_buffer_list_add(buffer_list, GET_TYPE(INIT)->buffer);
-
-    // Init won't have timings set, set it using data
-    GST_BUFFER_PTS(GET_TYPE(INIT)->buffer) =
-      GST_BUFFER_PTS(GET_TYPE(DATA)->buffer);
-    GST_BUFFER_DTS(GET_TYPE(INIT)->buffer) =
-      GST_BUFFER_DTS(GET_TYPE(DATA)->buffer) -
-      GST_BUFFER_DURATION(GET_TYPE(DATA)->buffer);
-    GST_BUFFER_DURATION(GET_TYPE(INIT)->buffer) = GST_CLOCK_TIME_NONE;
-  }
-
-  // Copy the mdat header
+  // Move the mdat header out of the data buffer
   GstMemory* mdat_hdr =
     gst_memory_share(gst_buffer_peek_memory(GET_TYPE(DATA)->buffer, 0), 0, 8);
-
-  // Resize the data buffer
   gst_buffer_resize(GET_TYPE(DATA)->buffer, 8, -1);
 
-  // Append the memory to the header or init, whichever is present
-  if (GET_TYPE(HEADER)->buffer)
-    gst_buffer_append_memory(GET_TYPE(HEADER)->buffer, mdat_hdr);
-  else if (GET_TYPE(INIT)->buffer)
-    gst_buffer_append_memory(GET_TYPE(INIT)->buffer, mdat_hdr);
-  else {
-    GST_ERROR("No init or header buffer found");
-    g_assert_not_reached();
+  // Go through all samples
+  gsize data_offset = 0;
+  for (guint s = 0; s < mp4mx_ctx->next_samples->len; s++) {
+    SampleInfo* sample = &g_array_index(mp4mx_ctx->next_samples, SampleInfo, s);
+
+    // Create a new buffer
+    GstBuffer* sample_buffer = gst_buffer_new();
+
+    // Slice the buffer
+    gsize avail_sample_size = sample->size;
+    gsize offset = 0;
+    guint n_blocks = gst_buffer_n_memory(GET_TYPE(DATA)->buffer);
+    for (guint b = 0; b < n_blocks && avail_sample_size; b++) {
+      GstMemory* mem = gst_buffer_peek_memory(GET_TYPE(DATA)->buffer, b);
+      gsize size = gst_memory_get_sizes(mem, NULL, NULL);
+
+      // Skip until we reach the data offset
+      if (offset + size <= data_offset)
+        goto skip;
+
+      // Check the offset within the block
+      gsize block_offset = 0;
+      if (offset < data_offset) {
+        block_offset = data_offset - offset;
+        offset += block_offset;
+        size -= block_offset;
+      }
+
+      // Check if the block is enough
+      if (size <= avail_sample_size) {
+        gst_buffer_append_memory(sample_buffer,
+                                 gst_memory_share(mem, block_offset, size));
+        avail_sample_size -= size;
+      } else {
+        gst_buffer_append_memory(
+          sample_buffer,
+          gst_memory_share(mem, block_offset, avail_sample_size));
+        avail_sample_size = 0;
+      }
+
+    skip:
+      // Update the local offset
+      offset += size;
+    }
+
+    // Set the marker flag if it's the last sample
+    if (s == mp4mx_ctx->next_samples->len - 1)
+      GST_BUFFER_FLAG_SET(sample_buffer, GST_BUFFER_FLAG_MARKER);
+
+    // Set the delta unit flag. These buffers are always delta because they
+    // follow a moof
+    GST_BUFFER_FLAG_SET(sample_buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+    if (sample->is_sync)
+      segment_boundary = TRUE;
+
+    // Set the PTS, DTS, and duration
+    GST_BUFFER_PTS(sample_buffer) = sample->pts;
+    GST_BUFFER_DTS(sample_buffer) = sample->dts;
+    GST_BUFFER_DURATION(sample_buffer) = sample->duration;
+
+    // Append the sample buffer
+    gst_buffer_list_add(buffer_list, sample_buffer);
+
+    GST_DEBUG_OBJECT(ctx->sess->element,
+                     "Added sample %d to the buffer list: size: %ld, "
+                     "duration: %" GST_TIME_FORMAT ", "
+                     "DTS: %" GST_TIME_FORMAT ", "
+                     "PTS: %" GST_TIME_FORMAT,
+                     s,
+                     sample->size,
+                     GST_TIME_ARGS(sample->duration),
+                     GST_TIME_ARGS(sample->dts),
+                     GST_TIME_ARGS(sample->pts));
+
+    // Update the data offset
+    data_offset += sample->size;
   }
 
-  // Add the header and data buffers
-  if (GET_TYPE(HEADER)->buffer)
-    gst_buffer_list_add(buffer_list, GET_TYPE(HEADER)->buffer);
-  gst_buffer_list_add(buffer_list, GET_TYPE(DATA)->buffer);
+  // Unref the data buffer
+  gst_buffer_unref(GET_TYPE(DATA)->buffer);
+
+headers:
+  // Add the init buffer if it's present
+  if (init_present) {
+    GST_DEBUG_OBJECT(ctx->sess->element, "Adding init buffer to the beginning");
+
+    // Set the flags
+    GST_BUFFER_FLAG_SET(GET_TYPE(INIT)->buffer, GST_BUFFER_FLAG_HEADER);
+    if (mp4mx_ctx->segment_count == 0) {
+      GST_BUFFER_FLAG_SET(GET_TYPE(INIT)->buffer, GST_BUFFER_FLAG_DISCONT);
+      ctx->is_continuous = TRUE;
+    }
+
+    // Set the timing information
+    guint64 pts = G_MAXUINT64;
+    guint64 dts = G_MAXUINT64;
+    if (has_sample_info) {
+      // Set PTS and DTS to the minimum of the samples
+      for (guint s = 0; s < mp4mx_ctx->next_samples->len; s++) {
+        SampleInfo* sample =
+          &g_array_index(mp4mx_ctx->next_samples, SampleInfo, s);
+
+        dts = MIN(dts, sample->dts);
+        if (sample->pts < pts)
+          pts = sample->pts;
+        else {
+          // PTS can only decrease if there are B-frames, so we break
+          break;
+        }
+      }
+    } else {
+      // Set the PTS and DTS to the minimum of the data
+      pts = GST_BUFFER_PTS(GET_TYPE(DATA)->buffer);
+      dts = GST_BUFFER_DTS(GET_TYPE(DATA)->buffer);
+    }
+
+    GST_BUFFER_PTS(GET_TYPE(INIT)->buffer) = pts;
+    GST_BUFFER_DTS(GET_TYPE(INIT)->buffer) = dts;
+    GST_BUFFER_DURATION(GET_TYPE(INIT)->buffer) = GST_CLOCK_TIME_NONE;
+
+    gst_buffer_list_insert(buffer_list, 0, GET_TYPE(INIT)->buffer);
+  }
+
+  // Add the header buffer if it's present
+  if (header_present) {
+    GST_DEBUG_OBJECT(ctx->sess->element, "Adding header buffer after init");
+
+    // Set the flags
+    GST_BUFFER_FLAG_SET(GET_TYPE(HEADER)->buffer, GST_BUFFER_FLAG_HEADER);
+
+    // Set the delta unit based on the first sample
+    if (!segment_boundary)
+      GST_BUFFER_FLAG_SET(GET_TYPE(HEADER)->buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+
+    // Set the timing information
+    // Set the timing information
+    guint64 pts = G_MAXUINT64;
+    guint64 dts = G_MAXUINT64;
+    guint64 duration = 0;
+    if (has_sample_info) {
+      // Set PTS and DTS to the minimum of the samples
+      for (guint s = 0; s < mp4mx_ctx->next_samples->len; s++) {
+        SampleInfo* sample =
+          &g_array_index(mp4mx_ctx->next_samples, SampleInfo, s);
+
+        pts = MIN(pts, sample->pts);
+        dts = MIN(dts, sample->dts);
+        duration += sample->duration;
+      }
+    } else {
+      // Set the PTS and DTS to the minimum of the data
+      pts = GST_BUFFER_PTS(GET_TYPE(DATA)->buffer);
+      dts = GST_BUFFER_DTS(GET_TYPE(DATA)->buffer);
+      duration = GST_BUFFER_DURATION(GET_TYPE(DATA)->buffer);
+    }
+
+    GST_BUFFER_PTS(GET_TYPE(HEADER)->buffer) = pts;
+    GST_BUFFER_DTS(GET_TYPE(HEADER)->buffer) = dts;
+    GST_BUFFER_DURATION(GET_TYPE(HEADER)->buffer) = duration;
+
+    // Append the mdat header
+    gst_buffer_append_memory(GET_TYPE(HEADER)->buffer, mdat_hdr);
+
+    // Insert the header buffer
+    gst_buffer_list_insert(
+      buffer_list, init_present ? 1 : 0, GET_TYPE(HEADER)->buffer);
+  }
 
   // Reset the buffer contents
   for (guint i = 0; i < LAST; i++) {
@@ -357,6 +812,23 @@ mp4mx_create_buffer_list(GF_Filter* filter)
   }
 
   return buffer_list;
+}
+
+BufferType
+mp4mx_get_buffer_type(GF_Filter* filter, guint32 box_type)
+{
+  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+
+  // Check if the box type is related to the current type
+  for (guint i = mp4mx_ctx->current_type; i < LAST; i++) {
+    for (guint j = 0; box_mapping[i].boxes[j]; j++) {
+      if (box_mapping[i].boxes[j] == box_type)
+        return box_mapping[i].type;
+    }
+  }
+
+  return LAST;
 }
 
 GF_Err
@@ -377,60 +849,55 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
     if (!mp4mx_is_box_complete(box))
       break;
 
-    GST_DEBUG("Current type: %d", mp4mx_ctx->current_type);
-    guint32 last_type;
-    for (last_type = mp4mx_ctx->current_type; last_type < LAST; last_type++) {
-      // Check if the current box is related to current type
-      gboolean found = FALSE;
-      for (guint i = 0; box_mapping[last_type].boxes[i]; i++) {
-        if (box_mapping[last_type].boxes[i] == box->box_type) {
-          found = TRUE;
-          break;
-        }
-      }
+    GST_DEBUG_OBJECT(
+      ctx->sess->element, "Current type: %d", mp4mx_ctx->current_type);
 
-      // Data only has one box type
-      if (found && last_type == DATA)
-        GET_TYPE(last_type)->is_complete = TRUE;
-
-      if (found) {
-        GST_DEBUG("Found box type %s for type %d",
-                  gf_4cc_to_str(box->box_type),
-                  last_type);
-        break;
-      }
-
-      // If not found, it's likely the last type was completed
-      GET_TYPE(last_type)->is_complete = TRUE;
+    // Get the buffer type
+    BufferType type = mp4mx_get_buffer_type(filter, box->box_type);
+    if (type == LAST) {
+      GST_WARNING_OBJECT(ctx->sess->element,
+                         "Box %s is not related to any current or future "
+                         "buffer types",
+                         gf_4cc_to_str(box->box_type));
+      goto skip;
     }
 
-    // Check if the box is unknown
-    if (last_type == LAST) {
-      GST_ERROR("mp4mx post-processor encountered unknown box type %s",
-                gf_4cc_to_str(box->box_type));
-      g_assert_not_reached();
-    }
+    GST_DEBUG_OBJECT(ctx->sess->element,
+                     "Found box type %s for type %d",
+                     gf_4cc_to_str(box->box_type),
+                     type);
+
+    // Mark all previous types as complete
+    for (guint j = mp4mx_ctx->current_type; j < type; j++)
+      GET_TYPE(j)->is_complete = TRUE;
+
+    // Mark the current type as complete if it's DATA
+    if (type == DATA)
+      GET_TYPE(type)->is_complete = TRUE;
 
     // Set the current type
-    mp4mx_ctx->current_type = last_type;
+    mp4mx_ctx->current_type = type;
 
     // Create the master buffer
-    GstBuffer** master_buffer = &GET_TYPE(last_type)->buffer;
+    GstBuffer** master_buffer = &GET_TYPE(type)->buffer;
     if (!(*master_buffer))
       *master_buffer = box->buffer;
     else
       *master_buffer = gst_buffer_append(*master_buffer, box->buffer);
 
-    GST_DEBUG("New buffer [type: %d, size: %" G_GUINT32_FORMAT
-              "]: %p (PTS: %" G_GUINT64_FORMAT ", DTS: %" G_GUINT64_FORMAT
-              ", duration: %" G_GUINT64_FORMAT ")",
-              last_type,
-              box->box_size,
-              *master_buffer,
-              GST_BUFFER_PTS(*master_buffer),
-              GST_BUFFER_DTS(*master_buffer),
-              GST_BUFFER_DURATION(*master_buffer));
+    GST_DEBUG_OBJECT(ctx->sess->element,
+                     "New buffer [type: %d, size: %" G_GUINT32_FORMAT
+                     "]: %p (PTS: %" G_GUINT64_FORMAT
+                     ", DTS: %" G_GUINT64_FORMAT
+                     ", duration: %" G_GUINT64_FORMAT ")",
+                     type,
+                     box->box_size,
+                     *master_buffer,
+                     GST_BUFFER_PTS(*master_buffer),
+                     GST_BUFFER_DTS(*master_buffer),
+                     GST_BUFFER_DURATION(*master_buffer));
 
+  skip:
     // Pop the box
     g_free(g_queue_pop_head(mp4mx_ctx->box_queue));
   }
@@ -445,7 +912,9 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 
   // Increment the segment count
   mp4mx_ctx->segment_count++;
-  GST_DEBUG("Enqueued GOP #%" G_GUINT32_FORMAT, mp4mx_ctx->segment_count);
+  GST_DEBUG_OBJECT(ctx->sess->element,
+                   "Enqueued GOP #%" G_GUINT32_FORMAT,
+                   mp4mx_ctx->segment_count);
 
   // Reset the current type
   mp4mx_ctx->current_type = INIT;

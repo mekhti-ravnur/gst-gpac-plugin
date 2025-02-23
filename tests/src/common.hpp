@@ -4,6 +4,8 @@
 #include <gtest/gtest.h>
 #include <thread>
 
+#define ROUND_UP(val, round) (((val) + (round) - 1) / (round) * (round))
+
 struct PipelineConfiguration
 {
   bool use_tee = false;

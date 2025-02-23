@@ -97,7 +97,9 @@ IsSegmentHeader(GstBuffer* buffer, bool is_independent = false)
 }
 
 guint32
-IsSegmentDelta(GstBuffer* buffer, guint32 expected_segment_size)
+IsSegmentData(GstBuffer* buffer,
+              guint32 expected_segment_size,
+              bool is_independent = false)
 {
   // It must not exceed the expected segment size
   guint32 buffer_size = gst_buffer_get_size(buffer);
@@ -108,6 +110,8 @@ IsSegmentDelta(GstBuffer* buffer, guint32 expected_segment_size)
   if (leftover == 0) {
     EXPECT_TRUE(GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_MARKER));
   }
+
+  // Data buffers are always delta units
   EXPECT_TRUE(GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT));
 
   // cmafmux sends buffers partially, so we need to check the leftover
@@ -129,6 +133,9 @@ TEST_F(GstTestFixture, StructureTest)
   GstElement* gpaccmafmux = gst_element_factory_make_full(
     "gpaccmafmux", "cdur", 1.0, "segdur", 5.0, NULL);
 
+  // Disable B-frames
+  g_object_set(GetEncoder(), "b-adapt", FALSE, "bframes", 0, NULL);
+
   // Create element sinks
   GstAppSink* cmafmux_sink = new GstAppSink(cmafmux, tee, pipeline);
   GstAppSink* gpaccmafmux_sink = new GstAppSink(gpaccmafmux, tee, pipeline);
@@ -149,17 +156,17 @@ TEST_F(GstTestFixture, StructureTest)
     // Both buffers should return something
     ASSERT_TRUE(cmaf_buffer && gpaccmaf_buffer);
 
+    // Both buffers should have the same number of buffers
+    EXPECT_EQ(gst_buffer_list_length(cmaf_buffer),
+              gst_buffer_list_length(gpaccmaf_buffer));
+
     std::vector<GstBufferList*> buffer_lists = { cmaf_buffer, gpaccmaf_buffer };
     for (GstBufferList* buffer_list : buffer_lists) {
       guint idx = 0;
       GstBuffer* buf;
       guint32 buffer_count = gst_buffer_list_length(buffer_list);
       bool is_cmaf = buffer_list == cmaf_buffer;
-
-      bool is_independent =
-        GST_BUFFER_PTS(gst_buffer_list_get(buffer_list, 0)) %
-          (5 * GST_SECOND) ==
-        0;
+      bool is_independent = segment_count == 0 || segment_count == 5;
 
 #define GET_NEXT_BUFFER()                        \
   ASSERT_LT(idx, buffer_count);                  \
@@ -183,7 +190,7 @@ TEST_F(GstTestFixture, StructureTest)
       guint32 leftover = data_size;
       while (gst_buffer_list_length(buffer_list) > idx) {
         GET_NEXT_BUFFER();
-        leftover = IsSegmentDelta(buf, leftover);
+        leftover = IsSegmentData(buf, leftover);
         if (leftover == 0)
           break;
       }
@@ -212,8 +219,6 @@ TEST_F(GstTestFixture, TimingTest)
     "gpaccmafmux", "cdur", 1.0, "segdur", 5.0, NULL);
 
   // Disable B-frames
-  // Since gpaccmafmux puts the complete chunk in a single buffer, we need to
-  // disable B-frames to make the comparison fair.
   g_object_set(GetEncoder(), "b-adapt", FALSE, "bframes", 0, NULL);
 
   // Create element sinks
@@ -239,27 +244,32 @@ TEST_F(GstTestFixture, TimingTest)
   ASSERT_LT(idx, buffer_count);                  \
   buf = gst_buffer_list_get(buffer_list, idx++);
 
-    // Zip buffer lists
-    guint length = std::min(gst_buffer_list_length(cmaf_buffer),
-                            gst_buffer_list_length(gpaccmaf_buffer));
-    for (guint idx = 0; idx < length; idx++) {
+#define ROUND_TIME(time) ROUND_UP(GST_TIME_AS_USECONDS(time), 10)
+
+    EXPECT_EQ(gst_buffer_list_length(cmaf_buffer),
+              gst_buffer_list_length(gpaccmaf_buffer));
+
+    // Go through all buffers
+    for (guint idx = 0; idx < gst_buffer_list_length(cmaf_buffer); idx++) {
       GstBuffer* cmaf_buf = gst_buffer_list_get(cmaf_buffer, idx);
       GstBuffer* gpaccmafmux_buf = gst_buffer_list_get(gpaccmaf_buffer, idx);
 
-      // Check only the PTS
-      EXPECT_EQ(GST_BUFFER_PTS(cmaf_buf), GST_BUFFER_PTS(gpaccmafmux_buf));
+      // The output will have the correct timing, but converting to nanoseconds
+      // introduce fractional errors, so we need to round up to the nearest 10
+      guint64 cm_pts = ROUND_TIME(GST_BUFFER_PTS(cmaf_buf));
+      guint64 cm_dts = ROUND_TIME(GST_BUFFER_DTS(cmaf_buf));
+      guint64 cm_dur = ROUND_TIME(GST_BUFFER_DURATION(cmaf_buf));
+      guint64 gp_pts = ROUND_TIME(GST_BUFFER_PTS(gpaccmafmux_buf));
+      guint64 gp_dts = ROUND_TIME(GST_BUFFER_DTS(gpaccmafmux_buf));
+      guint64 gp_dur = ROUND_TIME(GST_BUFFER_DURATION(gpaccmafmux_buf));
 
-      // The duration differs because, compared to cmafmux, we are
-      // outputting complete segments rather than dividing the mdat across
-      // individual buffers by samples.
-      if (!GST_BUFFER_FLAG_IS_SET(cmaf_buf, GST_BUFFER_FLAG_DELTA_UNIT)) {
-        EXPECT_EQ(GST_BUFFER_DURATION(cmaf_buf),
-                  GST_BUFFER_DURATION(gpaccmafmux_buf));
-      }
-
-      // For the same reason, the DTS is also not the same.
+      // Check all fields
+      EXPECT_EQ(cm_pts, gp_pts);
+      EXPECT_EQ(cm_dts, gp_dts);
+      EXPECT_EQ(cm_dur, gp_dur);
     }
 
 #undef GET_NEXT_BUFFER
+#undef ROUND_TIME
   }
 }
