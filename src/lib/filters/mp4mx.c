@@ -468,7 +468,7 @@ mp4mx_parse_moof(GF_Filter* filter, GstBuffer* buffer)
     sample->pts += ctx->global_offset;
 
     GST_DEBUG_OBJECT(ctx->sess->element,
-                     "Sample %d [%s]: size: %ld, "
+                     "Sample %d [%s]: size: %" G_GUINT64_FORMAT ", "
                      "duration: %" GST_TIME_FORMAT ", "
                      "DTS: %" GST_TIME_FORMAT ", "
                      "PTS: %" GST_TIME_FORMAT,
@@ -714,16 +714,17 @@ mp4mx_create_buffer_list(GF_Filter* filter)
     // Append the sample buffer
     gst_buffer_list_add(buffer_list, sample_buffer);
 
-    GST_DEBUG_OBJECT(ctx->sess->element,
-                     "Added sample %d to the buffer list: size: %ld, "
-                     "duration: %" GST_TIME_FORMAT ", "
-                     "DTS: %" GST_TIME_FORMAT ", "
-                     "PTS: %" GST_TIME_FORMAT,
-                     s,
-                     sample->size,
-                     GST_TIME_ARGS(sample->duration),
-                     GST_TIME_ARGS(sample->dts),
-                     GST_TIME_ARGS(sample->pts));
+    GST_DEBUG_OBJECT(
+      ctx->sess->element,
+      "Added sample %d to the buffer list: size: %" G_GUINT64_FORMAT ", "
+      "duration: %" GST_TIME_FORMAT ", "
+      "DTS: %" GST_TIME_FORMAT ", "
+      "PTS: %" GST_TIME_FORMAT,
+      s,
+      sample->size,
+      GST_TIME_ARGS(sample->duration),
+      GST_TIME_ARGS(sample->dts),
+      GST_TIME_ARGS(sample->pts));
 
     // Update the data offset
     data_offset += sample->size;
