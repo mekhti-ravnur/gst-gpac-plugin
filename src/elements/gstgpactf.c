@@ -410,15 +410,15 @@ gst_gpac_tf_sink_event(GstAggregator* agg,
       priv->flags |= GPAC_PAD_SEGMENT_SET;
       priv->dts_offset_set = FALSE;
 
-      // Update the segment only if video pad or the only pad
       gboolean is_video_pad = gst_pad_get_pad_template(GST_PAD(pad)) ==
                               gst_gpac_get_sink_template(TEMPLATE_VIDEO);
       gboolean is_only_pad = g_list_length(GST_ELEMENT(agg)->sinkpads) == 1;
-      if (is_video_pad || is_only_pad)
-        gst_aggregator_update_segment(agg, gst_segment_copy(segment));
 
-      // Set the global offset
-      gpac_memio_set_global_offset(GPAC_SESS_CTX(GPAC_CTX), segment);
+      // Update the segment and global offset only if video pad or the only pad
+      if (is_video_pad || is_only_pad) {
+        gst_aggregator_update_segment(agg, gst_segment_copy(segment));
+        gpac_memio_set_global_offset(GPAC_SESS_CTX(GPAC_CTX), segment);
+      }
 
       // Check if playback rate is equal to 1.0
       if (segment->rate != 1.0)
@@ -440,9 +440,35 @@ gst_gpac_tf_sink_event(GstAggregator* agg,
       break;
     }
 
-    case GST_EVENT_EOS:
+    case GST_EVENT_EOS: {
+      // Set this pad as EOS
+      priv->eos = TRUE;
+
+      // Are all pads EOS?
+      gboolean all_eos = TRUE;
+      GList* sinkpads = GST_ELEMENT(agg)->sinkpads;
+      for (GList* l = sinkpads; l; l = l->next) {
+        GstAggregatorPad* agg_pad = GST_AGGREGATOR_PAD(l->data);
+        GpacPadPrivate* priv = gst_pad_get_element_private(GST_PAD(agg_pad));
+        if (!priv->eos) {
+          all_eos = FALSE;
+          break;
+        }
+      }
+
+      if (!all_eos) {
+        GST_DEBUG_OBJECT(agg, "Not all pads are EOS, not sending EOS to GPAC");
+        break;
+      }
+
+      // If all pads are EOS, send EOS to the source
+      GST_DEBUG_OBJECT(agg, "All pads are EOS, sending EOS to GPAC");
       gpac_memio_set_eos(GPAC_SESS_CTX(GPAC_CTX), TRUE);
-      // fallthrough
+      gpac_session_run(GPAC_SESS_CTX(GPAC_CTX), TRUE);
+      gst_gpac_tf_consume(agg, GST_EVENT_TYPE(event) == GST_EVENT_EOS);
+      break;
+    }
+
     case GST_EVENT_FLUSH_START:
       gpac_session_run(GPAC_SESS_CTX(GPAC_CTX), TRUE);
       gst_gpac_tf_consume(agg, GST_EVENT_TYPE(event) == GST_EVENT_EOS);

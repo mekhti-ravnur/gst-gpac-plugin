@@ -49,6 +49,7 @@ typedef struct
   GstPad* self;
 
   // Information from the pad
+  gboolean eos;
   GstCaps* caps;
   GstTagList* tags;
   GstSegment* segment;
