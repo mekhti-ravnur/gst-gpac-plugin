@@ -277,6 +277,8 @@ CAPS_HANDLER_SIGNATURE(num_channels)
 
 CAPS_HANDLER_SIGNATURE(decoder_config)
 {
+  SKIP_IF_SET(GF_PROP_PID_DECODER_CONFIG);
+
   GstStructure* structure = gst_caps_get_structure(priv->caps, 0);
 
   // Get the codec data
