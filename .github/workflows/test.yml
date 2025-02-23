@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y gstreamer1.0-plugins-ugly gstreamer1.0-plugins-bad
+          sudo apt-get install -y gstreamer1.0-plugins-ugly gstreamer1.0-plugins-bad gstreamer1.0-libav
 
       - name: Build
         shell: bash
