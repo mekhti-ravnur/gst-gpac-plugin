@@ -81,6 +81,10 @@
 #define QT_CMAF_CAPS \
   QT_CAPS ", " \
   "variant=(string)cmaf"
+
+#define MPEG_TS_CAPS \
+  "video/mpegts, " \
+  "systemstream = (boolean) true"
 // clang-format on
 
 typedef struct

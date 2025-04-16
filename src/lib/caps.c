@@ -88,7 +88,7 @@ GstStaticPadTemplate gst_gpac_src_template =
   GST_STATIC_PAD_TEMPLATE("src",
                           GST_PAD_SRC,
                           GST_PAD_ALWAYS,
-                          GST_STATIC_CAPS(QT_CAPS));
+                          GST_STATIC_CAPS(QT_CAPS "; " MPEG_TS_CAPS));
 
 void
 gpac_install_src_pad_templates(GstElementClass* klass)

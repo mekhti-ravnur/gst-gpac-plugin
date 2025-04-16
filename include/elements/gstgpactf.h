@@ -148,7 +148,8 @@ static subelement_info subelements[] = {
     QT_CMAF_CAPS,
     GPAC_TF_FILTER_OPTION_ARRAY(GPAC_TF_FILTER_OPTION("cmaf", "cmf2", TRUE),
                                 GPAC_TF_FILTER_OPTION("store", "frag", FALSE))),
-  GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS, NULL)
+  GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS, NULL),
+  GPAC_TF_SUBELEMENT_AS("tsmx", "m2tsmx", MPEG_TS_CAPS, NULL),
 };
 
 /**
