@@ -31,6 +31,8 @@
 /* static info related to various format */
 
 // clang-format off
+#define INTERNAL_CAPS "application/x-gpac"
+
 #define COMMON_VIDEO_CAPS \
   "width = (int) [ 16, MAX ], " \
   "height = (int) [ 16, MAX ]"

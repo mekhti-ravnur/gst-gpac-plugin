@@ -152,7 +152,7 @@ gpac_memio_set_eos(GPAC_SessionContext* sess, gboolean eos)
 }
 
 gboolean
-gpac_memio_set_caps(GPAC_SessionContext* sess, GstCaps* caps)
+gpac_memio_set_gst_caps(GPAC_SessionContext* sess, GstCaps* caps)
 {
   if (!sess->memout)
     return TRUE;
@@ -184,6 +184,35 @@ gpac_memio_set_caps(GPAC_SessionContext* sess, GstCaps* caps)
                        "reverting to the previous caps"));
     gf_free(gf_caps);
     gf_filter_override_caps(sess->memout, current_caps, cur_nb_caps);
+    return FALSE;
+  }
+
+  // Reconnect the pipeline
+  u32 count = gf_fs_get_filters_count(sess->session);
+  for (u32 i = 0; i < count; i++) {
+    GF_Filter* filter = gf_fs_get_filter(sess->session, i);
+    gf_filter_reconnect_output(filter, NULL);
+  }
+
+  return TRUE;
+}
+
+gboolean
+gpac_memio_set_gf_caps(GPAC_SessionContext* sess,
+                       const GF_FilterCapability* caps,
+                       guint nb_caps)
+{
+  if (!sess->memout)
+    return TRUE;
+
+  // Set the capabilities
+  if (gf_filter_override_caps(sess->memout, caps, nb_caps) != GF_OK) {
+    GST_ELEMENT_ERROR(sess->element,
+                      STREAM,
+                      FAILED,
+                      (NULL),
+                      ("Failed to set the GF_FilterCapability on the memory "
+                       "output filter"));
     return FALSE;
   }
 

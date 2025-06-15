@@ -96,18 +96,6 @@ gpac_install_local_properties(GObjectClass* gobject_class,
                                G_PARAM_READWRITE));
         break;
 
-      case GPAC_PROP_NO_OUTPUT:
-        g_object_class_install_property(
-          gobject_class,
-          prop,
-          g_param_spec_boolean("no-output",
-                               "No Output",
-                               "Disable the memory output. Used only when "
-                               "instantiating the element within gpacsink",
-                               FALSE,
-                               G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
-        break;
-
       case GPAC_PROP_SEGDUR:
         g_object_class_install_property(
           gobject_class,
@@ -175,15 +163,15 @@ gpac_install_filter_properties(GObjectClass* gobject_class,
       if (!g_strcmp0(filter->args[option_idx].arg_name, item->data))
         goto skip;
 
-#define SPEC_INSTALL(type, ...)                                      \
-  g_object_class_install_property(                                   \
-    gobject_class,                                                   \
-    GPAC_PROP_FILTER_OFFSET + option_idx,                            \
-    g_param_spec_##type(filter->args[option_idx].arg_name,           \
-                        filter->args[option_idx].arg_name,           \
-                        filter->args[option_idx].arg_desc,           \
-                        __VA_ARGS__,                                 \
-                        G_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY));
+#define SPEC_INSTALL(type, ...)                            \
+  g_object_class_install_property(                         \
+    gobject_class,                                         \
+    GPAC_PROP_FILTER_OFFSET + option_idx,                  \
+    g_param_spec_##type(filter->args[option_idx].arg_name, \
+                        filter->args[option_idx].arg_name, \
+                        filter->args[option_idx].arg_desc, \
+                        __VA_ARGS__,                       \
+                        G_PARAM_WRITABLE));
 
     // Special case for enum values
     if (filter->args[option_idx].min_max_enum &&
@@ -282,9 +270,6 @@ gpac_set_property(GPAC_PropertyContext* ctx,
       case GPAC_PROP_PRINT_STATS:
         ctx->print_stats = g_value_get_boolean(value);
         break;
-      case GPAC_PROP_NO_OUTPUT:
-        ctx->no_output = g_value_get_boolean(value);
-        break;
       default:
         return FALSE;
     }
@@ -353,9 +338,6 @@ gpac_get_property(GPAC_PropertyContext* ctx,
         break;
       case GPAC_PROP_PRINT_STATS:
         g_value_set_boolean(value, ctx->print_stats);
-        break;
-      case GPAC_PROP_NO_OUTPUT:
-        g_value_set_boolean(value, ctx->no_output);
         break;
       default:
         return FALSE;

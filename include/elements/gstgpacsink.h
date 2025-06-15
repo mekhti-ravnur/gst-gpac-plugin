@@ -25,7 +25,9 @@
 
 #pragma once
 
+#include "elements/common.h"
 #include "gpacmessages.h"
+
 #include "lib/caps.h"
 #include "lib/properties.h"
 

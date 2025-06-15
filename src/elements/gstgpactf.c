@@ -24,6 +24,7 @@
  */
 
 #include "elements/gstgpactf.h"
+#include "elements/gstgpacsink.h"
 
 GST_DEBUG_CATEGORY_STATIC(gst_gpac_tf_debug);
 #define GST_CAT_DEFAULT gst_gpac_tf_debug
@@ -485,7 +486,23 @@ gboolean
 gst_gpac_tf_negotiated_src_caps(GstAggregator* agg, GstCaps* caps)
 {
   GstGpacTransform* gpac_tf = GST_GPAC_TF(GST_ELEMENT(agg));
-  return gpac_memio_set_caps(GPAC_SESS_CTX(GPAC_CTX), caps);
+  GstElement* element = GST_ELEMENT(agg);
+  GObjectClass* klass = G_OBJECT_CLASS(G_TYPE_INSTANCE_GET_CLASS(
+    G_OBJECT(element), GST_TYPE_GPAC_TF, GstGpacTransformClass));
+  GstGpacParams* params = GST_GPAC_GET_PARAMS(klass);
+
+  // Check if this is element is inside our sink bin
+  GstObject* sink_bin = gst_element_get_parent(element);
+  if (GST_IS_GPAC_SINK(sink_bin)) {
+    // We might have a predefined set of capabilities
+    if (params->is_single && params->info->gf_caps) {
+      return gpac_memio_set_gf_caps(GPAC_SESS_CTX(GPAC_CTX),
+                                    params->info->gf_caps,
+                                    params->info->nb_gf_caps);
+    }
+  }
+
+  return gpac_memio_set_gst_caps(GPAC_SESS_CTX(GPAC_CTX), caps);
 }
 
 void
@@ -784,7 +801,7 @@ gst_gpac_tf_start(GstAggregator* aggregator)
   GstElement* element = GST_ELEMENT(aggregator);
   GObjectClass* klass = G_OBJECT_CLASS(G_TYPE_INSTANCE_GET_CLASS(
     G_OBJECT(element), GST_TYPE_GPAC_TF, GstGpacTransformClass));
-  GstGpacTransformParams* params = GST_GPAC_TF_GET_PARAMS(klass);
+  GstGpacParams* params = GST_GPAC_GET_PARAMS(klass);
   GstSegment segment;
 
   // Check if we have the graph property set
@@ -871,7 +888,12 @@ gst_gpac_tf_start(GstAggregator* aggregator)
   g_free(graph);
 
   // Create the memory output
-  if (!GPAC_PROP_CTX(GPAC_CTX)->no_output) {
+  gboolean is_inside_sink = GST_IS_GPAC_SINK(gst_element_get_parent(element));
+  gboolean requires_memout =
+    params->info && GPAC_SE_IS_REQUIRES_MEMOUT(params->info->flags);
+  requires_memout = !is_inside_sink || (is_inside_sink && requires_memout);
+
+  if (requires_memout) {
     gpac_return_val_if_fail(
       gpac_memio_new(GPAC_SESS_CTX(GPAC_CTX), GPAC_MEMIO_DIR_OUT), FALSE);
   }
@@ -904,7 +926,7 @@ gst_gpac_tf_stop(GstAggregator* aggregator)
   GstGpacTransform* gpac_tf = GST_GPAC_TF(aggregator);
   GObjectClass* klass = G_OBJECT_CLASS(G_TYPE_INSTANCE_GET_CLASS(
     G_OBJECT(element), GST_TYPE_GPAC_TF, GstGpacTransformClass));
-  GstGpacTransformParams* params = GST_GPAC_TF_GET_PARAMS(klass);
+  GstGpacParams* params = GST_GPAC_GET_PARAMS(klass);
 
   // Reset the element
   gst_gpac_tf_reset(gpac_tf);
@@ -990,8 +1012,7 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
 {
   GObjectClass* gobject_class = G_OBJECT_CLASS(klass);
   GstElementClass* gstelement_class = GST_ELEMENT_CLASS(klass);
-  GstGpacTransformParams* params =
-    g_type_get_qdata(G_OBJECT_CLASS_TYPE(klass), GST_GPAC_TF_PARAMS_QDATA);
+  GstGpacParams* params = GST_GPAC_GET_PARAMS(klass);
 
   // Set the finalizer
   gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_gpac_tf_finalize);
@@ -1005,8 +1026,13 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
 
   // Add the subclass-specific properties and pad templates
   if (params->is_single) {
-    gst_element_class_add_static_pad_template(gstelement_class,
-                                              &params->info->src_template);
+    if (!GPAC_SE_IS_SINK_ONLY(params->info->flags)) {
+      gst_element_class_add_static_pad_template(gstelement_class,
+                                                &params->info->src_template);
+    } else {
+      gst_element_class_add_static_pad_template(gstelement_class,
+                                                &internal_pad_template);
+    }
 
     // Set property blacklist
     g_autolist(GList) blacklist = NULL;
@@ -1035,8 +1061,7 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
     }
   } else {
     gpac_install_src_pad_templates(gstelement_class);
-    gpac_install_local_properties(
-      gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_NO_OUTPUT, GPAC_PROP_0);
+    gpac_install_local_properties(gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_0);
 
     // We don't know which filters will be used, so we expose all options
     for (u32 i = 0; i < G_N_ELEMENTS(filter_options); i++) {
@@ -1071,7 +1096,7 @@ gboolean
 gst_gpac_tf_register(GstPlugin* plugin)
 {
   GType type;
-  GstGpacTransformParams* params;
+  GstGpacParams* params;
   GTypeInfo subclass_typeinfo = {
     sizeof(GstGpacTransformClass),
     NULL, // base_init
@@ -1088,11 +1113,11 @@ gst_gpac_tf_register(GstPlugin* plugin)
 
   // Register the regular transform element
   GST_LOG("Registering regular gpac transform element");
-  params = g_new0(GstGpacTransformParams, 1);
+  params = g_new0(GstGpacParams, 1);
   params->is_single = FALSE;
   type = g_type_register_static(
     GST_TYPE_GPAC_TF, "GstGpacTransformRegular", &subclass_typeinfo, 0);
-  g_type_set_qdata(type, GST_GPAC_TF_PARAMS_QDATA, params);
+  g_type_set_qdata(type, GST_GPAC_PARAMS_QDATA, params);
   if (!gst_element_register(plugin, "gpactf", GST_RANK_PRIMARY, type)) {
     GST_ERROR_OBJECT(plugin,
                      "Failed to register regular gpac transform element");
@@ -1103,9 +1128,16 @@ gst_gpac_tf_register(GstPlugin* plugin)
   for (u32 i = 0; i < G_N_ELEMENTS(subelements); i++) {
     subelement_info* info = &subelements[i];
 
-    // Register the regular transform element
+    if (info->flags & GPAC_SE_SINK_ONLY) {
+      GST_DEBUG_OBJECT(plugin,
+                       "Subelement %s is a sink only element, skipping",
+                       info->alias_name);
+      continue;
+    }
+
+    // Register the sub transform element
     GST_LOG("Registering %s transform subelement", info->filter_name);
-    params = g_new0(GstGpacTransformParams, 1);
+    params = g_new0(GstGpacParams, 1);
     params->is_single = TRUE;
     params->info = info;
     const gchar* name = g_strdup_printf("gpac%s", info->alias_name);
@@ -1116,7 +1148,7 @@ gst_gpac_tf_register(GstPlugin* plugin)
 
     type = g_type_register_static(
       GST_TYPE_GPAC_TF, type_name, &subclass_typeinfo, 0);
-    g_type_set_qdata(type, GST_GPAC_TF_PARAMS_QDATA, params);
+    g_type_set_qdata(type, GST_GPAC_PARAMS_QDATA, params);
     if (!gst_element_register(plugin, name, GST_RANK_SECONDARY, type)) {
       GST_ERROR_OBJECT(
         plugin, "Failed to register %s transform subelement", info->alias_name);
@@ -1128,3 +1160,47 @@ gst_gpac_tf_register(GstPlugin* plugin)
 }
 
 GST_ELEMENT_REGISTER_DEFINE_CUSTOM(gpac_tf, gst_gpac_tf_register);
+
+// #MARK: Private registration
+GType
+gst_gpac_tf_register_custom(subelement_info* se_info)
+{
+  const gchar* type_name =
+    g_strdup_printf("GstGpacTransformPrivate%c%s",
+                    g_ascii_toupper(se_info->alias_name[0]),
+                    se_info->alias_name + 1);
+
+  // Check if the type is already registered
+  if (g_type_from_name(type_name) != G_TYPE_INVALID) {
+    GST_WARNING("Type %s is already registered, returning existing type",
+                type_name);
+    return g_type_from_name(type_name);
+  }
+
+  GType type;
+  GTypeInfo type_info = {
+    sizeof(GstGpacTransformClass),
+    NULL, // base_init
+    NULL, // base_finalize
+    (GClassInitFunc)gst_gpac_tf_subclass_init,
+    NULL, // class_finalize
+    NULL, // class_data
+    sizeof(GstGpacTransform),
+    0,
+    NULL,
+  };
+
+  GST_DEBUG_CATEGORY_INIT(gst_gpac_tf_debug, "gpactf", 0, "GPAC Transform");
+
+  // Register the custom transform element
+  GST_LOG("Creating a private gpac transform element with subelement info: %p",
+          se_info);
+
+  GstGpacParams* params = g_new0(GstGpacParams, 1);
+  params->is_single = TRUE;
+  params->info = se_info;
+
+  type = g_type_register_static(GST_TYPE_GPAC_TF, type_name, &type_info, 0);
+  g_type_set_qdata(type, GST_GPAC_PARAMS_QDATA, params);
+  return type;
+}

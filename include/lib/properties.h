@@ -32,7 +32,6 @@ typedef struct
 {
   gchar* graph;
   gboolean print_stats;
-  gboolean no_output;
   GList* properties;
   GList* blacklist;
 
@@ -48,7 +47,6 @@ typedef enum
   // Top-level properties
   GPAC_PROP_GRAPH,
   GPAC_PROP_PRINT_STATS,
-  GPAC_PROP_NO_OUTPUT,
 
   // Element-specific properties
   GPAC_PROP_ELEMENT_OFFSET,

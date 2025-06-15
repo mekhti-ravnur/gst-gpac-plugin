@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "elements/common.h"
 #include "gpacmessages.h"
 
 #include "lib/caps.h"
@@ -96,88 +97,10 @@ struct _GstGpacTransformPad
 
 GST_ELEMENT_REGISTER_DECLARE(gpac_tf);
 
-/**
- * Subelements
- */
-#define GPAC_TF_SUBELEMENT_COMMON(name, caps)                  \
-  .filter_name = name,                                         \
-  .src_template = GST_STATIC_PAD_TEMPLATE(                     \
-    "src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS(caps))
-
-#define GPAC_TF_SUBELEMENT(name, caps, opts) \
-  { .alias_name = name,                      \
-    GPAC_TF_SUBELEMENT_COMMON(name, caps),   \
-    .default_options = opts }
-#define GPAC_TF_SUBELEMENT_AS(alias, name, caps, opts) \
-  { .alias_name = alias,                               \
-    GPAC_TF_SUBELEMENT_COMMON(name, caps),             \
-    .default_options = opts }
-
-typedef struct
-{
-  const gchar* name;
-  const gchar* value;
-  // If not forced, user can override this option
-  gboolean forced;
-} filter_option;
-
-typedef struct
-{
-  const gchar* alias_name;
-  const gchar* filter_name;
-  // The pad template to constrain the element with
-  GstStaticPadTemplate src_template;
-  // The default options to apply on the filter
-  filter_option* default_options;
-} subelement_info;
-
-#define GPAC_TF_FILTER_OPTION(name, value, forced) { name, value, forced }
-#define GPAC_TF_FILTER_OPTION_ARRAY(...) \
-  (filter_option[])                      \
-  {                                      \
-    __VA_ARGS__,                         \
-    {                                    \
-      NULL, NULL, FALSE                  \
-    }                                    \
-  }
-
-static subelement_info subelements[] = {
-  GPAC_TF_SUBELEMENT_AS(
-    "cmafmux",
-    "mp4mx",
-    QT_CMAF_CAPS,
-    GPAC_TF_FILTER_OPTION_ARRAY(GPAC_TF_FILTER_OPTION("cmaf", "cmf2", TRUE),
-                                GPAC_TF_FILTER_OPTION("store", "frag", FALSE))),
-  GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS, NULL),
-  GPAC_TF_SUBELEMENT_AS("tsmx", "m2tsmx", MPEG_TS_CAPS, NULL),
-};
-
-/**
- * Custom options to expose for the GPAC filters
- */
-#define GPAC_TF_FILTER_OPTIONS(name, ...)                           \
-  { .filter_name = name, .options = (guint32[]){ __VA_ARGS__, 0 } }
-
-typedef struct
-{
-  const gchar* filter_name;
-  guint32* options;
-} filter_option_overrides;
-
-static filter_option_overrides filter_options[] = {
-  GPAC_TF_FILTER_OPTIONS("mp4mx", GPAC_PROP_SEGDUR),
-};
-
-/**
- * Quark
- */
-#define GST_GPAC_TF_PARAMS_QDATA g_quark_from_static_string("gpac-tf-params")
-#define GST_GPAC_TF_GET_PARAMS(klass)                                    \
-  g_type_get_qdata(G_OBJECT_CLASS_TYPE(klass), GST_GPAC_TF_PARAMS_QDATA)
-typedef struct _GstGpacTransformParams
-{
-  gboolean is_single;
-  subelement_info* info;
-} GstGpacTransformParams;
+static GstStaticPadTemplate internal_pad_template =
+  GST_STATIC_PAD_TEMPLATE("src",
+                          GST_PAD_SRC,
+                          GST_PAD_ALWAYS,
+                          GST_STATIC_CAPS(INTERNAL_CAPS));
 
 G_END_DECLS

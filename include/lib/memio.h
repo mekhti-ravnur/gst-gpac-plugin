@@ -93,11 +93,22 @@ gpac_memio_set_eos(GPAC_SessionContext* sess, gboolean eos);
 
 /*! sets the caps of the memory output filter
     \param[in] sess the session context
-    \param[in] caps the caps to set
+    \param[in] caps the gst caps to set
     \return TRUE if the caps were set successfully, FALSE otherwise
 */
 gboolean
-gpac_memio_set_caps(GPAC_SessionContext* sess, GstCaps* caps);
+gpac_memio_set_gst_caps(GPAC_SessionContext* sess, GstCaps* caps);
+
+/*! sets the GF_FilterCapability of the memory output filter
+    \param[in] sess the session context
+    \param[in] caps the gpac capabilities to set
+    \param[in] nb_caps the number of capabilities
+    \return TRUE if the capabilities were set successfully, FALSE otherwise
+*/
+gboolean
+gpac_memio_set_gf_caps(GPAC_SessionContext* sess,
+                       const GF_FilterCapability* caps,
+                       guint nb_caps);
 
 /*! consumes the output of the memory output filter
     \param[in] sess the session context
