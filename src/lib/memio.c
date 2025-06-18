@@ -32,10 +32,19 @@ static GF_Err
 gpac_default_memin_process_cb(GF_Filter* filter);
 
 static Bool
-gpac_default_memin_process_event(GF_Filter* filter, const GF_FilterEvent* evt);
+gpac_default_memin_process_event_cb(GF_Filter* filter,
+                                    const GF_FilterEvent* evt);
 
 static GF_Err
 gpac_default_memout_process_cb(GF_Filter* filter);
+
+static Bool
+gpac_default_memout_use_alias_cb(GF_Filter* filter,
+                                 const char* url,
+                                 const char* mime);
+
+static GF_FilterProbeScore
+gpac_default_memout_probe_url_cb(const char* url, const char* mime);
 
 static GF_Err
 gpac_default_memout_configure_pid_cb(GF_Filter* filter,
@@ -47,15 +56,35 @@ static const GF_FilterCapability DefaultMemOutCaps[] = {
   CAP_STRING(GF_CAPS_INPUT, GF_PROP_PID_FILE_EXT, "*"),
 };
 
+typedef struct
+{
+  char* dst;
+} MemOutContext;
+
+#define OFFS(_n) #_n, offsetof(MemOutContext, _n)
+static const GF_FilterArgs MemoutArgs[] = {
+  { OFFS(dst),
+    "location of destination resource",
+    GF_PROP_NAME,
+    NULL,
+    NULL,
+    0 },
+  { 0 }
+};
+
 GF_FilterRegister MemOutRegister = {
   .name = "memout",
-  // Set to (u32) -1 once we add support for multiple "src" pads
-  .max_extra_pids = 0,
+  .args = MemoutArgs,
+  .private_size = sizeof(MemOutContext),
+  .max_extra_pids = -1,
   .priority = -1,
-  .flags = GF_FS_REG_FORCE_REMUX,
+  .flags =
+    GF_FS_REG_FORCE_REMUX | GF_FS_REG_TEMP_INIT | GF_FS_REG_EXPLICIT_ONLY,
   .caps = DefaultMemOutCaps,
   .nb_caps = G_N_ELEMENTS(DefaultMemOutCaps),
   .process = gpac_default_memout_process_cb,
+  .use_alias = gpac_default_memout_use_alias_cb,
+  .probe_url = gpac_default_memout_probe_url_cb,
   .configure_pid = gpac_default_memout_configure_pid_cb,
 };
 
@@ -76,7 +105,7 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
       return e;
     }
     gf_filter_set_process_ckb(memio, gpac_default_memin_process_cb);
-    gf_filter_set_process_event_ckb(memio, gpac_default_memin_process_event);
+    gf_filter_set_process_event_ckb(memio, gpac_default_memin_process_event_cb);
   } else {
     gf_fs_add_filter_register(sess->session, &MemOutRegister);
     memio = sess->memout = gf_fs_load_filter(sess->session, "memout", &e);
@@ -84,6 +113,33 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
       GST_ELEMENT_ERROR(
         sess->element, LIBRARY, INIT, (NULL), ("Failed to load memout filter"));
       return e;
+    }
+
+    // If we are in single filter mode, we explicitly connect to the last loaded
+    // filter to avoid connecting to the memin filter unnecessarily
+    if (sess->is_single) {
+      u32 count = gf_fs_get_filters_count(sess->session);
+      GF_Filter* filter = gf_fs_get_filter(sess->session, count - 2);
+      if (filter) {
+        // Connect the memout filter to the last filter
+        if (gf_filter_set_source(memio, filter, NULL) != GF_OK) {
+          GST_ELEMENT_ERROR(sess->element,
+                            LIBRARY,
+                            INIT,
+                            (NULL),
+                            ("Failed to connect memout filter to the last "
+                             "loaded filter %s",
+                             gf_filter_get_name(filter)));
+          return GF_BAD_PARAM;
+        }
+      } else {
+        GST_ELEMENT_ERROR(sess->element,
+                          LIBRARY,
+                          INIT,
+                          (NULL),
+                          ("No filters found in the session"));
+        return GF_BAD_PARAM;
+      }
     }
   }
 
@@ -232,21 +288,47 @@ gpac_memio_consume(GPAC_SessionContext* sess, void** outptr)
   if (!sess->memout)
     return GPAC_FILTER_PP_RET_NULL;
 
-  GPAC_MemIoContext* ctx = gf_filter_get_rt_udta(sess->memout);
-  if (!ctx)
-    return GPAC_FILTER_PP_RET_ERROR;
+  // Find the PID to consume
+  guint32 pid_to_consume = 0;
+  GF_FilterPid* best_ipid = NULL;
+  GPAC_MemOutPIDContext* best_pctx = NULL;
+  for (u32 i = 0; i < gf_filter_get_ipid_count(sess->memout); i++) {
+    GF_FilterPid* ipid = gf_filter_get_ipid(sess->memout, i);
+    GPAC_MemOutPIDContext* pctx =
+      (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(ipid);
+    GPAC_MemOutPIDFlags udta_flags = gf_filter_pid_get_udta_flags(ipid);
 
-  // Check if we have a input PID yet
-  if (!ctx->ipid)
-    return GPAC_FILTER_PP_RET_EMPTY;
+    // If we should not consume this PID, call the consume callback
+    // and continue to the next one
+    if (udta_flags & GPAC_MEMOUT_PID_FLAG_DONT_CONSUME) {
+      pctx->entry->consume(ipid, NULL);
+      continue;
+    }
 
-  // Get the post-process context
-  const gchar* source_name = gf_filter_pid_get_filter_name(ctx->ipid);
-  post_process_registry_entry* pp_entry =
-    gpac_filter_get_post_process_registry_entry(source_name);
+    // Check if there are more than one PID to consume
+    if (pid_to_consume > 0) {
+      GST_ELEMENT_ERROR(sess->element,
+                        STREAM,
+                        FAILED,
+                        (NULL),
+                        ("Multiple PIDs to consume, this is not supported by "
+                         "the memout filter"));
+      return GPAC_FILTER_PP_RET_ERROR;
+    }
 
-  // Consume the packet
-  return pp_entry->consume(sess->memout, outptr);
+    // We can consume this PID
+    pid_to_consume++;
+    best_ipid = ipid;
+    best_pctx = pctx;
+  }
+
+  if (!best_ipid) {
+    *outptr = NULL;
+    return GPAC_FILTER_PP_RET_EMPTY; // No PID to consume
+  }
+
+  // We can consume the PID
+  return best_pctx->entry->consume(best_ipid, outptr);
 }
 
 void
@@ -307,7 +389,8 @@ gpac_default_memin_process_cb(GF_Filter* filter)
 }
 
 static Bool
-gpac_default_memin_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
+gpac_default_memin_process_event_cb(GF_Filter* filter,
+                                    const GF_FilterEvent* evt)
 {
   if (evt->base.type == GF_FEVT_ENCODE_HINTS) {
     GF_FilterPid* pid = evt->base.on_pid;
@@ -345,20 +428,41 @@ gpac_default_memout_process_cb(GF_Filter* filter)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
 
-  // Get the packet
-  GF_FilterPacket* pck = gf_filter_pid_get_packet(ctx->ipid);
-  if (!pck)
-    return GF_OK;
+  for (u32 i = 0; i < gf_filter_get_ipid_count(filter); i++) {
+    GF_Err e = GF_OK;
+    GF_FilterPid* ipid = gf_filter_get_ipid(filter, i);
+    GPAC_MemOutPIDContext* pctx =
+      (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(ipid);
 
-  // Get the post-process context
-  const gchar* source_name = gf_filter_pid_get_filter_name(ctx->ipid);
-  post_process_registry_entry* pp_entry =
-    gpac_filter_get_post_process_registry_entry(source_name);
+    // Get the packet
+    GF_FilterPacket* pck = gf_filter_pid_get_packet(ipid);
+    if (!pck)
+      continue;
 
-  // Post-process the packet
-  GF_Err e = pp_entry->post_process(filter, pck);
-  gf_filter_pid_drop_packet(ctx->ipid);
-  return e;
+    // If we have a post-process context, process the packet
+    if (pctx && pctx->entry)
+      e = pctx->entry->post_process(filter, ipid, pck);
+
+    gf_filter_pid_drop_packet(ipid);
+    if (e != GF_OK)
+      return e;
+  }
+
+  return GF_OK;
+}
+
+static Bool
+gpac_default_memout_use_alias_cb(GF_Filter* filter,
+                                 const char* url,
+                                 const char* mime)
+{
+  return GF_TRUE; // Always allow alias usage
+}
+
+static GF_FilterProbeScore
+gpac_default_memout_probe_url_cb(const char* url, const char* mime)
+{
+  return GF_FPROBE_SUPPORTED; // Support everything
 }
 
 static GF_Err
@@ -366,44 +470,45 @@ gpac_default_memout_configure_pid_cb(GF_Filter* filter,
                                      GF_FilterPid* pid,
                                      Bool is_remove)
 {
-  GF_Err e = GF_OK;
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-
-  // Free the previous post-process context
-  if (ctx->current_pp) {
-    const gchar* source_name = gf_filter_pid_get_filter_name(ctx->ipid);
-    post_process_registry_entry* pp_entry =
-      gpac_filter_get_post_process_registry_entry(source_name);
-
-    if (is_remove || ctx->current_pp != pp_entry)
-      pp_entry->ctx_free(ctx->process_ctx);
-  }
+  GPAC_MemOutPIDContext* pctx = gf_filter_pid_get_udta(pid);
+  GPAC_MemOutPIDFlags udta = gf_filter_pid_get_udta_flags(pid);
 
   if (is_remove) {
-    ctx->ipid = NULL;
-    ctx->current_pp = NULL;
-    return e;
+    if (pctx) {
+      // Free the post-process context if it exists
+      if (pctx->entry)
+        pctx->entry->ctx_free(pctx->private_ctx);
+      g_free(pctx);
+    }
+    return GF_OK;
   }
 
-  if (!ctx->ipid) {
+  if (!udta) {
     GF_FilterEvent evt;
     gf_filter_pid_init_play_event(pid, &evt, 0, 1, "MemOut");
     gf_filter_pid_send_event(pid, &evt);
+    gf_filter_pid_set_udta_flags(pid, GPAC_MEMOUT_PID_FLAG_INITIALIZED);
+  } else {
+    // If the PID is already initialized, we can skip the configuration
+    if (udta & GPAC_MEMOUT_PID_FLAG_INITIALIZED) {
+      GST_DEBUG_OBJECT(ctx->sess->element,
+                       "PID %s is already initialized, proceeding with "
+                       "configure_pid callback only",
+                       gf_filter_pid_get_name(pid));
+      return pctx->entry->configure_pid(filter, pid);
+    }
   }
 
-  // Set the new PID
-  ctx->ipid = pid;
+  // Allocate the post-process context
+  pctx = g_new0(GPAC_MemOutPIDContext, 1);
+  gf_filter_pid_set_udta(pid, pctx);
 
   // Create a new post-process context
-  const gchar* source_name = gf_filter_pid_get_filter_name(ctx->ipid);
-  post_process_registry_entry* pp_entry =
-    gpac_filter_get_post_process_registry_entry(source_name);
+  const gchar* source_name = gf_filter_pid_get_filter_name(pid);
+  pctx->entry = gpac_filter_get_post_process_registry_entry(source_name);
+  pctx->entry->ctx_init(&pctx->private_ctx);
 
-  if (ctx->current_pp != pp_entry) {
-    pp_entry->ctx_init(&ctx->process_ctx);
-    e = pp_entry->configure_pid(filter, pid);
-    ctx->current_pp = pp_entry;
-  }
-
-  return e;
+  // Configure the PID with the post-process context
+  return pctx->entry->configure_pid(filter, pid);
 }

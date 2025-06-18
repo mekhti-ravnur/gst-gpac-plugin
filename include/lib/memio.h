@@ -45,12 +45,25 @@ typedef struct
   GPAC_SessionContext* sess;
 
   /*< memout-specific >*/
-  GF_FilterPid* ipid;
-  void* process_ctx;
   guint64 global_offset;
   gboolean is_continuous;
-  post_process_registry_entry* current_pp;
 } GPAC_MemIoContext;
+
+typedef struct
+{
+  post_process_registry_entry* entry;
+  void* private_ctx;
+} GPAC_MemOutPIDContext;
+
+typedef enum
+{
+  GPAC_MEMOUT_PID_FLAG_NONE = 0,
+  // PID has been initialized
+  GPAC_MEMOUT_PID_FLAG_INITIALIZED = (1 << 0),
+  // The element should not consume the output of this PID. consume callback
+  // will still be called, but the output will be NULL
+  GPAC_MEMOUT_PID_FLAG_DONT_CONSUME = (1 << 1),
+} GPAC_MemOutPIDFlags;
 
 /*! the memory io filter process callback
     \param[in] filter the filter to process

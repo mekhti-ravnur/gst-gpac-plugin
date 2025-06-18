@@ -37,6 +37,7 @@ typedef struct
 
   /*< internal >*/
   gboolean had_data_flow;
+  gboolean is_single;
 } GPAC_SessionContext;
 
 /*! initializes a gpac filter session

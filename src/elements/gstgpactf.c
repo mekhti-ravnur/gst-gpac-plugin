@@ -825,6 +825,7 @@ gst_gpac_tf_start(GstAggregator* aggregator)
   }
 
   // Create the session
+  GPAC_SESS_CTX(GPAC_CTX)->is_single = params && params->is_single;
   if (!gpac_session_init(GPAC_SESS_CTX(GPAC_CTX), element)) {
     GST_ELEMENT_ERROR(
       element, LIBRARY, INIT, (NULL), ("Failed to initialize GPAC session"));

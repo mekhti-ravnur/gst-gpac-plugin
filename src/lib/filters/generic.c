@@ -60,10 +60,11 @@ generic_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
 }
 
 GF_Err
-generic_post_process(GF_Filter* filter, GF_FilterPacket* pck)
+generic_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
 {
-  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  GenericCtx* generic_ctx = (GenericCtx*)ctx->process_ctx;
+  GPAC_MemOutPIDContext* ctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  GenericCtx* generic_ctx = (GenericCtx*)ctx->private_ctx;
 
   // Get the data
   u32 size;
@@ -87,17 +88,20 @@ generic_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 }
 
 GPAC_FilterPPRet
-generic_consume(GF_Filter* filter, void** outptr)
+generic_consume(GF_FilterPid* pid, void** outptr)
 {
-  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  GenericCtx* generic_ctx = (GenericCtx*)ctx->process_ctx;
-  *outptr = NULL;
+  GPAC_MemOutPIDContext* ctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  GenericCtx* generic_ctx = (GenericCtx*)ctx->private_ctx;
 
   // Check if the queue is empty
   if (g_queue_is_empty(generic_ctx->output_queue))
     return GPAC_FILTER_PP_RET_EMPTY;
 
   // Assign the output
-  *outptr = g_queue_pop_head(generic_ctx->output_queue);
-  return GPAC_FILTER_PP_RET_BUFFER;
+  if (outptr) {
+    *outptr = g_queue_pop_head(generic_ctx->output_queue);
+    return GPAC_FILTER_PP_RET_BUFFER;
+  }
+  return GPAC_FILTER_PP_RET_NULL;
 }

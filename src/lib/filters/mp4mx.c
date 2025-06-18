@@ -179,8 +179,9 @@ mp4mx_ctx_free(void* process_ctx)
 GF_Err
 mp4mx_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
 {
-  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+  GPAC_MemOutPIDContext* pctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)pctx->private_ctx;
 
   // Get the timescale from the PID
   mp4mx_ctx->mp4mx_ts = GST_SECOND;
@@ -213,10 +214,12 @@ mp4mx_is_box_complete(BoxInfo* box)
 }
 
 GF_Err
-mp4mx_parse_moov(GF_Filter* filter, GstBuffer* buffer)
+mp4mx_parse_moov(GF_Filter* filter, GF_FilterPid* pid, GstBuffer* buffer)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+  GPAC_MemOutPIDContext* pctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)pctx->private_ctx;
 
   // Map the buffer
   g_auto(GstBufferMapInfo) map = GST_MAP_INFO_INIT;
@@ -320,10 +323,12 @@ mp4mx_parse_moov(GF_Filter* filter, GstBuffer* buffer)
 }
 
 GF_Err
-mp4mx_parse_moof(GF_Filter* filter, GstBuffer* buffer)
+mp4mx_parse_moof(GF_Filter* filter, GF_FilterPid* pid, GstBuffer* buffer)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+  GPAC_MemOutPIDContext* pctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)pctx->private_ctx;
 
   // Map the buffer
   g_auto(GstBufferMapInfo) map = GST_MAP_INFO_INIT;
@@ -489,10 +494,12 @@ empty_moof:
 }
 
 gboolean
-mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
+mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+  GPAC_MemOutPIDContext* pctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)pctx->private_ctx;
 
   // Get the data
   u32 size;
@@ -568,11 +575,13 @@ mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
 
     switch (box->box_type) {
       case GF_ISOM_BOX_TYPE_MOOV:
-        gpac_return_val_if_fail(mp4mx_parse_moov(filter, box->buffer), FALSE);
+        gpac_return_val_if_fail(mp4mx_parse_moov(filter, pid, box->buffer),
+                                FALSE);
         break;
 
       case GF_ISOM_BOX_TYPE_MOOF:
-        gpac_return_val_if_fail(mp4mx_parse_moof(filter, box->buffer), FALSE);
+        gpac_return_val_if_fail(mp4mx_parse_moof(filter, pid, box->buffer),
+                                FALSE);
         break;
 
       default:
@@ -586,11 +595,13 @@ mp4mx_parse_boxes(GF_Filter* filter, GF_FilterPacket* pck)
 }
 
 GstBufferList*
-mp4mx_create_buffer_list(GF_Filter* filter)
+mp4mx_create_buffer_list(GF_Filter* filter, GF_FilterPid* pid)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
   GstGpacTransform* gpac_tf = GST_GPAC_TF(GST_ELEMENT(ctx->sess->element));
-  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+  GPAC_MemOutPIDContext* pctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)pctx->private_ctx;
 
   // Check if the init and header buffers are present
   gboolean init_present = GET_TYPE(INIT)->is_complete && GET_TYPE(INIT)->buffer;
@@ -831,10 +842,11 @@ headers:
 }
 
 BufferType
-mp4mx_get_buffer_type(GF_Filter* filter, guint32 box_type)
+mp4mx_get_buffer_type(GF_FilterPid* pid, guint32 box_type)
 {
-  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+  GPAC_MemOutPIDContext* ctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->private_ctx;
 
   // Check if the box type is related to the current type
   for (guint i = mp4mx_ctx->current_type; i < LAST; i++) {
@@ -848,15 +860,17 @@ mp4mx_get_buffer_type(GF_Filter* filter, guint32 box_type)
 }
 
 GF_Err
-mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
+mp4mx_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
 {
   GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
+  GPAC_MemOutPIDContext* pctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)pctx->private_ctx;
   if (!pck)
     return GF_OK;
 
   // Parse the boxes
-  if (!mp4mx_parse_boxes(filter, pck))
+  if (!mp4mx_parse_boxes(filter, pid, pck))
     return GF_OK;
 
   // Iterate over the boxes
@@ -869,7 +883,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
       ctx->sess->element, "Current type: %d", mp4mx_ctx->current_type);
 
     // Get the buffer type
-    BufferType type = mp4mx_get_buffer_type(filter, box->box_type);
+    BufferType type = mp4mx_get_buffer_type(pid, box->box_type);
     if (type == LAST) {
       GST_WARNING_OBJECT(ctx->sess->element,
                          "Box %s is not related to any current or future "
@@ -923,7 +937,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
     return GF_OK;
 
   // Create and enqueue the buffer list
-  GstBufferList* buffer_list = mp4mx_create_buffer_list(filter);
+  GstBufferList* buffer_list = mp4mx_create_buffer_list(filter, pid);
   g_queue_push_tail(mp4mx_ctx->output_queue, buffer_list);
 
   // Increment the segment count
@@ -939,17 +953,20 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPacket* pck)
 }
 
 GPAC_FilterPPRet
-mp4mx_consume(GF_Filter* filter, void** outptr)
+mp4mx_consume(GF_FilterPid* pid, void** outptr)
 {
-  GPAC_MemIoContext* ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
-  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->process_ctx;
-  *outptr = NULL;
+  GPAC_MemOutPIDContext* ctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  Mp4mxCtx* mp4mx_ctx = (Mp4mxCtx*)ctx->private_ctx;
 
   // Check if the queue is empty
   if (g_queue_is_empty(mp4mx_ctx->output_queue))
     return GPAC_FILTER_PP_RET_EMPTY;
 
   // Assign the output
-  *outptr = g_queue_pop_head(mp4mx_ctx->output_queue);
-  return GPAC_FILTER_PP_RET_BUFFER_LIST;
+  if (outptr) {
+    *outptr = g_queue_pop_head(mp4mx_ctx->output_queue);
+    return GPAC_FILTER_PP_RET_BUFFER_LIST;
+  }
+  return GPAC_FILTER_PP_RET_NULL;
 }

@@ -42,12 +42,13 @@ typedef enum
   GPAC_FILTER_PP_RET_BUFFER_LIST = ((1 << 5) | GPAC_FILTER_PP_RET_VALID),
 } GPAC_FilterPPRet;
 
-#define GPAC_FILTER_PP_IMPL_DECL(filter_name)                                 \
-  void filter_name##_ctx_init(void** process_ctx);                            \
-  void filter_name##_ctx_free(void* process_ctx);                             \
-  GF_Err filter_name##_configure_pid(GF_Filter* filter, GF_FilterPid* pid);   \
-  GF_Err filter_name##_post_process(GF_Filter* filter, GF_FilterPacket* pck); \
-  GPAC_FilterPPRet filter_name##_consume(GF_Filter* filter, void** outptr);
+#define GPAC_FILTER_PP_IMPL_DECL(filter_name)                               \
+  void filter_name##_ctx_init(void** process_ctx);                          \
+  void filter_name##_ctx_free(void* process_ctx);                           \
+  GF_Err filter_name##_configure_pid(GF_Filter* filter, GF_FilterPid* pid); \
+  GF_Err filter_name##_post_process(                                        \
+    GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck);            \
+  GPAC_FilterPPRet filter_name##_consume(GF_FilterPid* pid, void** outptr);
 
 #define GPAC_FILTER_PP_IMPL_DEFINE(filter_name) \
   { #filter_name,                               \
@@ -69,8 +70,10 @@ typedef struct
   void (*ctx_init)(void** process_ctx);
   void (*ctx_free)(void* process_ctx);
   GF_Err (*configure_pid)(GF_Filter* filter, GF_FilterPid* pid);
-  GF_Err (*post_process)(GF_Filter* filter, GF_FilterPacket* pck);
-  GPAC_FilterPPRet (*consume)(GF_Filter* filter, void** outptr);
+  GF_Err (*post_process)(GF_Filter* filter,
+                         GF_FilterPid* pid,
+                         GF_FilterPacket* pck);
+  GPAC_FilterPPRet (*consume)(GF_FilterPid* pid, void** outptr);
 } post_process_registry_entry;
 
 static post_process_registry_entry pp_registry[] = {
