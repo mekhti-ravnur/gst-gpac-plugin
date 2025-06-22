@@ -11,8 +11,7 @@ TEST_F(GstTestFixture, NonFragmented)
   GstElement* gpaccmafmux = gst_element_factory_make("gpacmp4mx", NULL);
 
   // Set the destination options
-  std::string const file =
-    fs::temp_directory_path().string() + "/" + "nonfrag.mp4";
+  std::string file = fs::temp_directory_path().string() + "/" + "nonfrag.mp4";
   GstElement* sink =
     gst_element_factory_make_full("filesink", "location", file.c_str(), NULL);
 
@@ -60,8 +59,7 @@ TEST_F(GstTestFixture, MultipleInputs)
   GstElement* gpaccmafmux = gst_element_factory_make("gpaccmafmux", NULL);
 
   // Set the destination options
-  std::string const file =
-    fs::temp_directory_path().string() + "/" + "multi.mp4";
+  std::string file = fs::temp_directory_path().string() + "/" + "multi.mp4";
   GstElement* sink =
     gst_element_factory_make_full("filesink", "location", file.c_str(), NULL);
 

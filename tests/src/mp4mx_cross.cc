@@ -2,27 +2,27 @@
 
 typedef std::pair<guint32, guint32> fourcc_t;
 
-auto
+bool
 extract_box_fourccs(GstBuffer* buffer,
                     std::vector<fourcc_t>& fourccs,
-                    guint32* leftover = NULL) -> bool
+                    guint32* leftover = NULL)
 {
   GstBufferMapInfo map_info;
   if (!gst_buffer_map(buffer, &map_info, GST_MAP_READ))
     return false;
 
   guint8* data = map_info.data;
-  guint32 const size = map_info.size;
+  guint32 size = map_info.size;
   guint32 offset = 0;
 
   while (offset < size) {
-    guint32 const box_size =
+    guint32 box_size =
       GUINT32_FROM_LE((data[offset] << 24) | (data[offset + 1] << 16) |
                       (data[offset + 2] << 8) | data[offset + 3]);
-    guint32 const box_type =
+    guint32 box_type =
       GUINT32_FROM_BE((data[offset + 4] << 24) | (data[offset + 5] << 16) |
                       (data[offset + 6] << 8) | data[offset + 7]);
-    fourcc_t const fourcc = std::make_pair(box_type, box_size);
+    fourcc_t fourcc = std::make_pair(box_type, box_size);
     fourccs.push_back(fourcc);
     offset += box_size;
   }
@@ -49,8 +49,8 @@ IsSegmentInit(GstBuffer* buffer)
 
   bool has_ftyp = false;
   bool has_moov = false;
-  for (fourcc_t const fourcc : fourccs) {
-    guint32 const fourcc_type = fourcc.first;
+  for (fourcc_t fourcc : fourccs) {
+    guint32 fourcc_type = fourcc.first;
     if (fourcc_type == GST_MAKE_FOURCC('f', 't', 'y', 'p'))
       has_ftyp = true;
     if (fourcc_type == GST_MAKE_FOURCC('m', 'o', 'o', 'v'))
@@ -61,8 +61,8 @@ IsSegmentInit(GstBuffer* buffer)
   EXPECT_TRUE(has_moov);
 }
 
-auto
-IsSegmentHeader(GstBuffer* buffer, bool is_independent = false) -> guint32
+guint32
+IsSegmentHeader(GstBuffer* buffer, bool is_independent = false)
 {
   // It must only have the following flags
   if (is_independent)
@@ -78,9 +78,9 @@ IsSegmentHeader(GstBuffer* buffer, bool is_independent = false) -> guint32
 
   bool has_moof = false;
   bool has_mdat = false;
-  for (fourcc_t const fourcc : fourccs) {
-    guint32 const fourcc_type = fourcc.first;
-    guint32 const box_size = fourcc.second;
+  for (fourcc_t fourcc : fourccs) {
+    guint32 fourcc_type = fourcc.first;
+    guint32 box_size = fourcc.second;
     if (fourcc_type == GST_MAKE_FOURCC('m', 'o', 'o', 'f'))
       has_moof = true;
     if (fourcc_type == GST_MAKE_FOURCC('m', 'd', 'a', 't')) {
@@ -96,15 +96,15 @@ IsSegmentHeader(GstBuffer* buffer, bool is_independent = false) -> guint32
   return leftover;
 }
 
-auto
+guint32
 IsSegmentData(GstBuffer* buffer,
               guint32 expected_segment_size,
-              bool is_independent = false) -> guint32
+              bool is_independent = false)
 {
   // It must not exceed the expected segment size
-  guint32 const buffer_size = gst_buffer_get_size(buffer);
+  guint32 buffer_size = gst_buffer_get_size(buffer);
   EXPECT_LE(buffer_size, expected_segment_size);
-  guint32 const leftover = expected_segment_size - buffer_size;
+  guint32 leftover = expected_segment_size - buffer_size;
 
   // It must only have the following flags
   if (leftover == 0) {
@@ -160,14 +160,13 @@ TEST_F(GstTestFixture, StructureTest)
     EXPECT_EQ(gst_buffer_list_length(cmaf_buffer),
               gst_buffer_list_length(gpaccmaf_buffer));
 
-    std::vector<GstBufferList*> const buffer_lists = { cmaf_buffer,
-                                                       gpaccmaf_buffer };
+    std::vector<GstBufferList*> buffer_lists = { cmaf_buffer, gpaccmaf_buffer };
     for (GstBufferList* buffer_list : buffer_lists) {
       guint idx = 0;
       GstBuffer* buf;
-      guint32 const buffer_count = gst_buffer_list_length(buffer_list);
-      bool const is_cmaf = buffer_list == cmaf_buffer;
-      bool const is_independent = segment_count == 0 || segment_count == 5;
+      guint32 buffer_count = gst_buffer_list_length(buffer_list);
+      bool is_cmaf = buffer_list == cmaf_buffer;
+      bool is_independent = segment_count == 0 || segment_count == 5;
 
 #define GET_NEXT_BUFFER()                        \
   ASSERT_LT(idx, buffer_count);                  \
@@ -185,7 +184,7 @@ TEST_F(GstTestFixture, StructureTest)
 
       // Check buffer #1
       GET_NEXT_BUFFER();
-      guint32 const data_size = IsSegmentHeader(buf, is_independent);
+      guint32 data_size = IsSegmentHeader(buf, is_independent);
 
       // Check buffer #2...N
       guint32 leftover = data_size;
@@ -257,12 +256,12 @@ TEST_F(GstTestFixture, TimingTest)
 
       // The output will have the correct timing, but converting to nanoseconds
       // introduce fractional errors, so we need to round up to the nearest 10
-      guint64 const cm_pts = ROUND_TIME(GST_BUFFER_PTS(cmaf_buf));
-      guint64 const cm_dts = ROUND_TIME(GST_BUFFER_DTS(cmaf_buf));
-      guint64 const cm_dur = ROUND_TIME(GST_BUFFER_DURATION(cmaf_buf));
-      guint64 const gp_pts = ROUND_TIME(GST_BUFFER_PTS(gpaccmafmux_buf));
-      guint64 const gp_dts = ROUND_TIME(GST_BUFFER_DTS(gpaccmafmux_buf));
-      guint64 const gp_dur = ROUND_TIME(GST_BUFFER_DURATION(gpaccmafmux_buf));
+      guint64 cm_pts = ROUND_TIME(GST_BUFFER_PTS(cmaf_buf));
+      guint64 cm_dts = ROUND_TIME(GST_BUFFER_DTS(cmaf_buf));
+      guint64 cm_dur = ROUND_TIME(GST_BUFFER_DURATION(cmaf_buf));
+      guint64 gp_pts = ROUND_TIME(GST_BUFFER_PTS(gpaccmafmux_buf));
+      guint64 gp_dts = ROUND_TIME(GST_BUFFER_DTS(gpaccmafmux_buf));
+      guint64 gp_dur = ROUND_TIME(GST_BUFFER_DURATION(gpaccmafmux_buf));
 
       // Check all fields
       EXPECT_EQ(cm_pts, gp_pts);
