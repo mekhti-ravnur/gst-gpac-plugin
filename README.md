@@ -28,6 +28,11 @@ Functions similarly to `gpactf` element, you can assume it's equivalent to `gpac
 
 This is again a convenience element that functions similarly to `gpactf` element, except that it's contained under a `GstBin` and connected to `fakesink`. This element is useful for testing purposes.
 
+### Other noteworthy elements
+
+- **`gpachlssink`**: This element is a sink for HLS streams. It can be used to create HLS playlists and segments.
+- **`gpachtsmx`**: This element is a sink for TS streams. It can be used to create MPEG-TS segments.
+
 ## Installation
 
 The plugin requires GPAC to be installed on your system. You can install GPAC by following the instructions on the [GPAC wiki](https://wiki.gpac.io/Build/Build-Introduction/). There's no specific required version of GPAC, but we recommend building from source to ensure compatibility. You can also find the latest build artifacts for the plugin [here](https://github.com/gpac/gst-gpac-plugin/releases/latest). Be sure to rename the library files to `libgpac_plugin.{so,dylib}` and place them in the appropriate location.
