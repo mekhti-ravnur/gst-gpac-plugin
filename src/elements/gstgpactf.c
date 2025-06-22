@@ -1044,18 +1044,19 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
     }
 
     // Set property blacklist
-    g_autolist(GList) blacklist = NULL;
+    GList* blacklist = NULL;
     if (params->info->default_options) {
       filter_option* opt = params->info->default_options;
       for (u32 i = 0; opt[i].name; i++) {
         if (opt[i].forced)
-          blacklist = g_list_append(blacklist, g_strdup(opt[i].name));
+          blacklist = g_list_append(blacklist, (gpointer)opt[i].name);
       }
     }
 
     // Install the filter properties
     gpac_install_filter_properties(
       gobject_class, blacklist, params->info->filter_name);
+    g_list_free(blacklist);
 
     // Install the signals if not inside the sink bin
     // They would be installed by the sink bin itself
