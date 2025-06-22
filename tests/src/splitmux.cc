@@ -1,4 +1,4 @@
-#include "common.hpp"
+#include "helper/common.hpp"
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -8,9 +8,9 @@ TEST_F(GstTestFixture, SplitMux)
   this->SetUpPipeline({ false, "x264enc", 300 });
 
   // Create a random folder
-  std::string folder = fs::temp_directory_path().string() + "/splitmux";
+  std::string const folder = fs::temp_directory_path().string() + "/splitmux";
   fs::create_directory(folder);
-  std::string location = folder + "/video%05d.mp4";
+  std::string const location = folder + "/video%05d.mp4";
 
   // Create the elements
   GstElement* muxer =

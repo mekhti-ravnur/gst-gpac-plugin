@@ -26,7 +26,7 @@ FetchContent_MakeAvailable(googletest)
 # Sources
 file(GLOB_RECURSE SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/helper/*.hpp
 )
 
 # Test executable

@@ -11,9 +11,20 @@ struct PipelineConfiguration
 {
   bool use_tee = false;
   std::string encoder = "x264enc";
-  int num_buffers = 300;
+  int v_num_buffers = 300;
+  int a_num_buffers = 300;
   std::string source = "videotestsrc";
   std::string caps = "video/x-raw, framerate=30/1";
+};
+
+struct PipelineConfigurationMany : public PipelineConfiguration
+{
+  std::vector<std::string> source_caps = {
+    "video/x-raw, framerate=30/1, width=640, height=360",
+    "video/x-raw, framerate=30/1, width=896, height=504",
+    "video/x-raw, framerate=30/1, width=1152, height=648",
+    "audio/x-raw, rate=48000, channels=2",
+  };
 };
 
 class GstAppSink
@@ -86,6 +97,7 @@ protected:
   GstElement* GetSource(int i = 0) { return sources[i]; }
   GstElement* GetLastElement(int i = 0) { return source_sinks[i]; }
   GstElement* GetEncoder(int i = 0) { return encoders[i]; }
+  std::vector<GstElement*> GetEncoders() { return encoders; }
   void SetLive(bool is_live)
   {
     for (GstElement* source : sources)
@@ -127,7 +139,7 @@ protected:
     }
 
     // Reconfigure the source
-    g_object_set(source, "num-buffers", cfg.num_buffers, NULL);
+    g_object_set(source, "num-buffers", cfg.v_num_buffers, NULL);
 
     // Create the encoder
     GstElement* encoder =
@@ -167,6 +179,71 @@ protected:
         return;
       }
       source_sinks[0] = tee;
+    }
+  }
+
+  void SetUpPipelineMany(PipelineConfigurationMany cfg)
+  {
+    for (auto& source_cap : cfg.source_caps) {
+      if (source_cap.find("audio/x-raw") != std::string::npos) {
+        // Audio source
+        GstElement* source = gst_element_factory_make_full(
+          "audiotestsrc", "do-timestamp", TRUE, "is-live", FALSE, NULL);
+        sources.push_back(source);
+      } else {
+        // Video source
+        GstElement* source = gst_element_factory_make_full(
+          "videotestsrc", "do-timestamp", TRUE, "is-live", FALSE, NULL);
+        sources.push_back(source);
+      }
+
+      // Create the caps filter
+      GstElement* capsfilter = gst_element_factory_make_full(
+        "capsfilter", "caps", gst_caps_from_string(source_cap.c_str()), NULL);
+      if (!capsfilter) {
+        g_error("Failed to create elements");
+        return;
+      }
+      // Add the source and caps filter to the pipeline
+      gst_bin_add_many(GST_BIN(pipeline), sources.back(), capsfilter, NULL);
+      // Link the elements
+      if (!gst_element_link(sources.back(), capsfilter)) {
+        g_error("Failed to link elements");
+        return;
+      }
+
+      // Set the number of buffers
+      if (source_cap.find("audio/x-raw") != std::string::npos)
+        g_object_set(sources.back(), "num-buffers", cfg.a_num_buffers, NULL);
+      else
+        g_object_set(sources.back(), "num-buffers", cfg.v_num_buffers, NULL);
+
+      // Create the encoder
+      GstElement* encoder;
+      if (source_cap.find("audio/x-raw") != std::string::npos) {
+        // Audio encoder
+        encoder = gst_element_factory_make_full("avenc_aac", NULL);
+        if (!encoder) {
+          g_error("Failed to create elements");
+          return;
+        }
+      } else {
+        // Video encoder
+        encoder = gst_element_factory_make_full(cfg.encoder.c_str(), NULL);
+        if (!encoder) {
+          g_error("Failed to create elements");
+          return;
+        }
+        g_object_set(encoder, "b-adapt", FALSE, "bframes", 0, NULL);
+      }
+      encoders.push_back(encoder);
+      // Add the encoder to the pipeline
+      gst_bin_add(GST_BIN(pipeline), encoder);
+      // Link the caps filter to the encoder
+      if (!gst_element_link(capsfilter, encoder)) {
+        g_error("Failed to link elements");
+        return;
+      }
     }
   }
 

@@ -1,4 +1,4 @@
-#include "common.hpp"
+#include "helper/common.hpp"
 
 TEST_F(GstTestFixture, Live)
 {

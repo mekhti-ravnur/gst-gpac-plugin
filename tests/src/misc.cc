@@ -1,4 +1,4 @@
-#include "common.hpp"
+#include "helper/common.hpp"
 #include <filesystem>
 #include <gpac/isomedia.h>
 #include <gpac/media_tools.h>
@@ -11,7 +11,8 @@ TEST_F(GstTestFixture, NonFragmented)
   GstElement* gpaccmafmux = gst_element_factory_make("gpacmp4mx", NULL);
 
   // Set the destination options
-  std::string file = fs::temp_directory_path().string() + "/" + "nonfrag.mp4";
+  std::string const file =
+    fs::temp_directory_path().string() + "/" + "nonfrag.mp4";
   GstElement* sink =
     gst_element_factory_make_full("filesink", "location", file.c_str(), NULL);
 
@@ -49,7 +50,7 @@ TEST_F(GstTestFixture, MultipleInputs)
 {
   this->SetUpPipeline({ false, "x264enc", 30 });
   this->SetUpPipeline(
-    { false, "avenc_aac", 1, "audiotestsrc", "audio/x-raw, rate=44100" });
+    { false, "avenc_aac", 1, 1, "audiotestsrc", "audio/x-raw, rate=44100" });
 
   // Set samples per buffer for the audio source
   GstElement* audio_source = this->GetSource(1);
@@ -59,7 +60,8 @@ TEST_F(GstTestFixture, MultipleInputs)
   GstElement* gpaccmafmux = gst_element_factory_make("gpaccmafmux", NULL);
 
   // Set the destination options
-  std::string file = fs::temp_directory_path().string() + "/" + "multi.mp4";
+  std::string const file =
+    fs::temp_directory_path().string() + "/" + "multi.mp4";
   GstElement* sink =
     gst_element_factory_make_full("filesink", "location", file.c_str(), NULL);
 
