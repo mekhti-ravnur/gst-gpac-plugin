@@ -755,8 +755,13 @@ gst_gpac_tf_create_new_pad(GstAggregator* element,
                                           NULL);
   g_free(name);
 
+  // Get the total number of pads
+  guint pad_count = agg->audio_pad_count + agg->video_pad_count +
+                    agg->subtitle_pad_count + agg->caption_pad_count;
+
   // Initialize the private data
   GpacPadPrivate* priv = gst_pad_get_element_private(GST_PAD(pad));
+  priv->id = pad_count;
   if (caps) {
     priv->caps = gst_caps_copy(caps);
     priv->flags |= GPAC_PAD_CAPS_SET;

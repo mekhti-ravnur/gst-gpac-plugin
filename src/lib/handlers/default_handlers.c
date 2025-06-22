@@ -75,7 +75,6 @@ DEFAULT_HANDLER_SIGNATURE(id)
   SKIP_IF_SET(GF_PROP_PID_ID);
 
   // Set a new monotonic id
-  static guint id = 1;
-  SET_PROP(GF_PROP_PID_ID, PROP_UINT(id++));
+  SET_PROP(GF_PROP_PID_ID, PROP_UINT(priv->id));
   return TRUE;
 }

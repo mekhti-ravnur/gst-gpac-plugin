@@ -47,6 +47,7 @@ typedef enum
 typedef struct
 {
   GstPad* self;
+  guint id; // Monotonic ID of the pad, used for ID property in gpac
 
   // Information from the pad
   gboolean eos;
