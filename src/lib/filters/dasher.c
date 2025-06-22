@@ -115,6 +115,31 @@ dasher_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
   return GF_OK;
 }
 
+Bool
+dasher_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
+{
+  if (evt->base.type == GF_FEVT_FILE_DELETE) {
+    GPAC_MemIoContext* io_ctx =
+      (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+    GPAC_MemOutPIDContext* ctx =
+      (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(evt->base.on_pid);
+    DasherCtx* dasher_ctx = (DasherCtx*)ctx->private_ctx;
+
+    GST_TRACE_OBJECT(io_ctx->sess->element,
+                     "Received file delete event for PID %s: %s",
+                     gf_filter_pid_get_name(evt->base.on_pid),
+                     evt->file_del.url);
+
+    gpac_signal_try_emit(io_ctx->sess->element,
+                         GPAC_SIGNAL_DASHER_DELETE_SEGMENT,
+                         evt->file_del.url,
+                         NULL);
+
+    return GF_TRUE;
+  }
+  return GF_FALSE;
+}
+
 void
 dasher_open_close_file(GF_Filter* filter, GF_FilterPid* pid, const char* name)
 {
@@ -151,19 +176,27 @@ dasher_open_close_file(GF_Filter* filter, GF_FilterPid* pid, const char* name)
   // Decide on the file flags
   if (dasher_ctx->is_manifest) {
     if (g_strcmp0(name, dasher_ctx->dst) == 0) {
-      file->out = gpac_signal_try_emit(
-        io_ctx->sess->element, GPAC_SIGNAL_DASHER_MANIFEST, file->name);
+      gpac_signal_try_emit(io_ctx->sess->element,
+                           GPAC_SIGNAL_DASHER_MANIFEST,
+                           file->name,
+                           &file->out);
     } else {
-      file->out = gpac_signal_try_emit(
-        io_ctx->sess->element, GPAC_SIGNAL_DASHER_MANIFEST_VARIANT, file->name);
+      gpac_signal_try_emit(io_ctx->sess->element,
+                           GPAC_SIGNAL_DASHER_MANIFEST_VARIANT,
+                           file->name,
+                           &file->out);
     }
   } else {
     if (g_strcmp0(name, dasher_ctx->dst) == 0) {
-      file->out = gpac_signal_try_emit(
-        io_ctx->sess->element, GPAC_SIGNAL_DASHER_SEGMENT_INIT, file->name);
+      gpac_signal_try_emit(io_ctx->sess->element,
+                           GPAC_SIGNAL_DASHER_SEGMENT_INIT,
+                           file->name,
+                           &file->out);
     } else {
-      file->out = gpac_signal_try_emit(
-        io_ctx->sess->element, GPAC_SIGNAL_DASHER_SEGMENT, file->name);
+      gpac_signal_try_emit(io_ctx->sess->element,
+                           GPAC_SIGNAL_DASHER_SEGMENT,
+                           file->name,
+                           &file->out);
     }
   }
 }

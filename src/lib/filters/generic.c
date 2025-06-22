@@ -59,6 +59,12 @@ generic_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
   return GF_OK;
 }
 
+Bool
+generic_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
+{
+  return GF_FALSE; // No event processing
+}
+
 GF_Err
 generic_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
 {

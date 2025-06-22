@@ -42,6 +42,10 @@ static GF_Err
 gpac_default_memout_process_cb(GF_Filter* filter);
 
 static Bool
+gpac_default_memout_process_event_cb(GF_Filter* filter,
+                                     const GF_FilterEvent* evt);
+
+static Bool
 gpac_default_memout_use_alias_cb(GF_Filter* filter,
                                  const char* url,
                                  const char* mime);
@@ -83,6 +87,7 @@ GF_FilterRegister MemOutRegister = {
   .nb_caps = G_N_ELEMENTS(DefaultMemOutCaps),
   .initialize = gpac_default_memout_initialize_cb,
   .process = gpac_default_memout_process_cb,
+  .process_event = gpac_default_memout_process_event_cb,
   .use_alias = gpac_default_memout_use_alias_cb,
   .probe_url = gpac_default_memout_probe_url_cb,
   .configure_pid = gpac_default_memout_configure_pid_cb,
@@ -468,6 +473,19 @@ gpac_default_memout_process_cb(GF_Filter* filter)
   }
 
   return GF_OK;
+}
+
+static Bool
+gpac_default_memout_process_event_cb(GF_Filter* filter,
+                                     const GF_FilterEvent* evt)
+{
+  GPAC_MemOutPIDContext* pctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(evt->base.on_pid);
+
+  // If we have a post-process context, process the event
+  if (pctx && pctx->entry)
+    return pctx->entry->process_event(filter, evt);
+  return GF_FALSE; // No post-process context, do not process the event
 }
 
 static Bool

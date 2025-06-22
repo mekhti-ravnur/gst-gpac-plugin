@@ -53,6 +53,8 @@ typedef enum
   GF_Err filter_name##_configure_pid(GF_Filter* filter, GF_FilterPid* pid); \
   GF_Err filter_name##_post_process(                                        \
     GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck);            \
+  Bool filter_name##_process_event(GF_Filter* filter,                       \
+                                   const GF_FilterEvent* evt);              \
   GPAC_FilterPPRet filter_name##_consume(                                   \
     GF_Filter* filter, GF_FilterPid* pid, void** outptr);
 
@@ -62,6 +64,7 @@ typedef enum
     filter_name##_ctx_free,                     \
     filter_name##_configure_pid,                \
     filter_name##_post_process,                 \
+    filter_name##_process_event,                \
     filter_name##_consume }
 
 // Forward declarations
@@ -80,6 +83,7 @@ typedef struct
   GF_Err (*post_process)(GF_Filter* filter,
                          GF_FilterPid* pid,
                          GF_FilterPacket* pck);
+  Bool (*process_event)(GF_Filter* filter, const GF_FilterEvent* evt);
   GPAC_FilterPPRet (*consume)(GF_Filter* filter,
                               GF_FilterPid* pid,
                               void** outptr);

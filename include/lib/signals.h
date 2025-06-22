@@ -41,20 +41,19 @@ typedef enum
   GPAC_SIGNAL_DASHER_MANIFEST_VARIANT,
   GPAC_SIGNAL_DASHER_SEGMENT_INIT,
   GPAC_SIGNAL_DASHER_SEGMENT,
+  GPAC_SIGNAL_DASHER_DELETE_SEGMENT,
 
   // Accessors
   GPAC_SIGNAL_START = GPAC_SIGNAL_DASHER_MANIFEST,
-  GPAC_SIGNAL_END = GPAC_SIGNAL_DASHER_SEGMENT,
+  GPAC_SIGNAL_END = GPAC_SIGNAL_DASHER_DELETE_SEGMENT,
   GPAC_SIGNAL_LAST = GPAC_SIGNAL_END + 1,
 } GPAC_SignalId;
 
 // Signal Names
 // Starts from GPAC_SIGNAL_START and ends at GPAC_SIGNAL_END
 static const gchar* gpac_signal_names[] = {
-  "get-manifest",
-  "get-manifest-variant",
-  "get-segment-init",
-  "get-segment",
+  "get-manifest", "get-manifest-variant", "get-segment-init",
+  "get-segment",  "delete-segment",
 };
 
 /*! installs the signals to the GObject class
@@ -72,14 +71,17 @@ gpac_install_signals_by_presets(GObjectClass* gobject_class,
 void
 gpac_install_all_signals(GObjectClass* gobject_class);
 
-/*! tries to emit a signal and returns the output stream
+/*! tries to emit a signal
     \param[in] element the GstElement to emit the signal on
     \param[in] id the signal ID to emit
     \param[in] location the location string to pass to the signal
-    \return the GOutputStream if the signal was emitted, NULL otherwise
-    \note The signal must be registered before calling this function
+    \param[out] output_stream if not NULL, will be set to the output stream
+    \return TRUE if the signal was emitted successfully, FALSE otherwise
+    \note The output_stream is set only if the signal is registered and has an
+   output stream parameter.
 */
-GOutputStream*
+gboolean
 gpac_signal_try_emit(GstElement* element,
                      GPAC_SignalId id,
-                     const gchar* location);
+                     const gchar* location,
+                     GOutputStream** output_stream);

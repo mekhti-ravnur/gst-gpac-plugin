@@ -62,17 +62,41 @@ register_signal(GObjectClass* klass, GPAC_SignalId id)
   if (registered_signals[id])
     return; // Already registered
 
-  registered_signals[id] =
-    g_signal_new(gpac_signal_names[id - 1], // Adjusted index for 0-based array
-                 G_TYPE_FROM_CLASS(klass),
-                 G_SIGNAL_RUN_LAST | G_SIGNAL_NO_RECURSE,
-                 0,
-                 NULL,
-                 NULL,
-                 NULL,
-                 G_TYPE_OUTPUT_STREAM,
-                 1,
-                 G_TYPE_STRING);
+  switch (id) {
+    case GPAC_SIGNAL_DASHER_MANIFEST:
+    case GPAC_SIGNAL_DASHER_MANIFEST_VARIANT:
+    case GPAC_SIGNAL_DASHER_SEGMENT_INIT:
+    case GPAC_SIGNAL_DASHER_SEGMENT:
+      registered_signals[id] = g_signal_new(
+        gpac_signal_names[id - 1], // Adjusted index for 0-based array
+        G_TYPE_FROM_CLASS(klass),
+        G_SIGNAL_RUN_LAST | G_SIGNAL_NO_RECURSE,
+        0,
+        NULL,
+        NULL,
+        NULL,
+        G_TYPE_OUTPUT_STREAM,
+        1,
+        G_TYPE_STRING);
+      break;
+
+    case GPAC_SIGNAL_DASHER_DELETE_SEGMENT:
+      registered_signals[id] = g_signal_new(
+        gpac_signal_names[id - 1], // Adjusted index for 0-based array
+        G_TYPE_FROM_CLASS(klass),
+        G_SIGNAL_RUN_LAST | G_SIGNAL_NO_RECURSE,
+        0,
+        NULL,
+        NULL,
+        NULL,
+        G_TYPE_NONE, // No return value
+        1,
+        G_TYPE_STRING);
+      break;
+
+    default:
+      break;
+  };
 }
 
 void
@@ -113,10 +137,11 @@ gpac_install_all_signals(GObjectClass* klass)
   }
 }
 
-GOutputStream*
+gboolean
 gpac_signal_try_emit(GstElement* element,
                      GPAC_SignalId id,
-                     const gchar* location)
+                     const gchar* location,
+                     GOutputStream** output_stream)
 {
   g_assert(element != NULL);
   g_assert(id < GPAC_SIGNAL_LAST);
@@ -133,9 +158,13 @@ gpac_signal_try_emit(GstElement* element,
 
     guint signal_id = registered_signals[id];
     if (signal_id) {
-      GOutputStream* output_stream = NULL;
-      g_signal_emit(parent, signal_id, 0, location, &output_stream);
-      return output_stream;
+      if (output_stream) {
+        *output_stream = NULL;
+        g_signal_emit(parent, signal_id, 0, location, output_stream);
+        return (*output_stream != NULL);
+      }
+      g_signal_emit(parent, signal_id, 0, location);
+      return TRUE;
     }
   } while ((parent = gst_element_get_parent(parent)));
 
@@ -147,5 +176,5 @@ gpac_signal_try_emit(GstElement* element,
                        gpac_signal_names[id - 1],
                        GST_OBJECT_NAME(element)));
 
-  return NULL;
+  return FALSE;
 }

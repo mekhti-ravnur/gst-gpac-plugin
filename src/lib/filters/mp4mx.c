@@ -194,6 +194,12 @@ mp4mx_configure_pid(GF_Filter* filter, GF_FilterPid* pid)
   return GF_OK;
 }
 
+Bool
+mp4mx_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
+{
+  return GF_FALSE; // No event processing
+}
+
 GstMemory*
 mp4mx_create_memory(const u8* data, guint32 size, GF_FilterPacket* pck)
 {
