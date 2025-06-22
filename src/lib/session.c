@@ -116,10 +116,10 @@ gpac_session_close(GPAC_SessionContext* ctx, gboolean print_stats)
 
     // Print session stats
     if (print_stats) {
-      gf_log_set_tools_levels("all@info", 1);
+      gf_log_set_tools_levels("app@info", 1);
       gf_fs_print_connections(ctx->session);
       gf_fs_print_stats(ctx->session);
-      gf_log_set_tools_levels("all@warning", 1);
+      gf_log_set_tools_levels("app@warning", 1);
     }
 
     gpac_memio_free(ctx);
