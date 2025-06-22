@@ -282,21 +282,7 @@ dasher_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
       name = fname->value.string;
 
     if (name) {
-      Bool use_rel = GF_FALSE;
-      if (dasher_ctx->dst) {
-        rel = gf_filter_pck_get_property(pck, GF_PROP_PCK_FILE_REL);
-        if (rel && rel->value.boolean)
-          use_rel = GF_TRUE;
-      }
-      if (use_rel) {
-        name = gf_url_concatenate(dasher_ctx->dst, name);
-      }
-
-      // Create a new file, we'll append GstMemory to it later
       dasher_open_close_file(filter, pid, name);
-
-      if (use_rel)
-        gf_free((char*)name);
     } else if (!dasher_ctx->current_file) {
       dasher_setup_file(filter, pid);
     }
