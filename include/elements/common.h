@@ -26,6 +26,7 @@
 
 #include "lib/caps.h"
 #include "lib/properties.h"
+#include "lib/signals.h"
 
 #include <gst/gst.h>
 
@@ -67,8 +68,6 @@ typedef enum
   GPAC_SE_REQUIRES_MEMOUT = 1 << 1,
 } subelement_flags;
 
-#define GPAC_SE_IS_SINK_ONLY(flags)                    \
-  (((flags) & GPAC_SE_SINK_ONLY) == GPAC_SE_SINK_ONLY)
 #define GPAC_SE_IS_REQUIRES_MEMOUT(flags)                          \
   (((flags) & GPAC_SE_REQUIRES_MEMOUT) == GPAC_SE_REQUIRES_MEMOUT)
 
@@ -81,9 +80,10 @@ typedef struct
   GstStaticPadTemplate src_template;
   // The default options to apply on the filter
   filter_option* default_options;
-  // Predefined caps for the subelement
-  const GF_FilterCapability* gf_caps;
-  guint nb_gf_caps;
+  // Requested output destination
+  const gchar* destination;
+  // Signal presets (comma-separated)
+  const gchar* signal_presets;
 } subelement_info;
 
 #define GPAC_TF_SUBELEMENT_COMMON(name, caps)                   \
@@ -115,12 +115,13 @@ typedef struct
     GPAC_TF_SUBELEMENT_COMMON_FLAGS(name, caps, flags),             \
     .default_options = (opts) }
 
-#define GPAC_TF_SUBELEMENT_CUSTOM(alias, name, caps, flags, opts, _gf_caps) \
-  { .alias_name = (alias),                                                  \
-    GPAC_TF_SUBELEMENT_COMMON_FLAGS(name, caps, flags),                     \
-    .default_options = (opts),                                              \
-    .gf_caps = (_gf_caps),                                                  \
-    .nb_gf_caps = G_N_ELEMENTS(_gf_caps) }
+#define GPAC_TF_SUBELEMENT_CUSTOM(                      \
+  alias, name, caps, flags, opts, dest, spresets)       \
+  { .alias_name = (alias),                              \
+    GPAC_TF_SUBELEMENT_COMMON_FLAGS(name, caps, flags), \
+    .default_options = (opts),                          \
+    .destination = (dest),                              \
+    .signal_presets = (spresets) }
 
 #define GPAC_TF_FILTER_OPTION(name, value, forced) { name, value, forced }
 #define GPAC_TF_FILTER_OPTION_ARRAY(...) \
@@ -132,6 +133,10 @@ typedef struct
     }                                    \
   }
 
+//
+// Subelement definitions
+//
+
 static subelement_info subelements[] = {
   GPAC_TF_SUBELEMENT_AS(
     "cmafmux",
@@ -140,10 +145,16 @@ static subelement_info subelements[] = {
     GPAC_TF_FILTER_OPTION_ARRAY(GPAC_TF_FILTER_OPTION("cmaf", "cmf2", TRUE),
                                 GPAC_TF_FILTER_OPTION("store", "frag", FALSE))),
   GPAC_TF_SUBELEMENT("mp4mx", QT_CAPS, NULL),
-  GPAC_TF_SUBELEMENT_FLAGS("dasher",
-                           NULL, // No caps, this is a sink only element
-                           GPAC_SE_SINK_ONLY | GPAC_SE_REQUIRES_MEMOUT,
-                           NULL),
+  GPAC_TF_SUBELEMENT_CUSTOM(
+    "hls",
+    "dasher",
+    NULL, // No caps, this is a sink only element
+    GPAC_SE_SINK_ONLY | GPAC_SE_REQUIRES_MEMOUT,
+    GPAC_TF_FILTER_OPTION_ARRAY(
+      GPAC_TF_FILTER_OPTION("mname", "master.m3u8", TRUE),
+      GPAC_TF_FILTER_OPTION("cmaf", "cmf2", TRUE)),
+    "master.m3u8",
+    "dasher_all"),
   GPAC_TF_SUBELEMENT_AS("tsmx", "m2tsmx", MPEG_TS_CAPS, NULL),
 };
 
@@ -158,18 +169,26 @@ typedef struct _GstGpacParams
 {
   GType private_type;
   gboolean is_single;
+  gboolean is_inside_sink;
   subelement_info* info;
+  guint registered_signals[GPAC_SIGNAL_LAST];
 } GstGpacParams;
 
 /**
  * Register a private subelement with the GPAC/GStreamer wrapper.
  *
  * @param se_info Information about the subelement to register
+ * @param is_inside_sink Whether the subelement is inside a sink bin
  * @return GType of the registered subelement
  * @note This element won't be registered with GStreamer, but it will be
  * available to instantiate
  */
 GType
-gst_gpac_tf_register_custom(subelement_info* se_info);
+gst_gpac_tf_register_custom(subelement_info* se_info, gboolean is_inside_sink);
+
+/**
+ * Helper macros
+ */
+#define HAS_FLAG(flags, flag) (((flags) & (flag)) == (flag))
 
 G_END_DECLS

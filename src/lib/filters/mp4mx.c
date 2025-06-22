@@ -38,6 +38,7 @@ static guint32 INIT_BOXES[] = { GF_ISOM_BOX_TYPE_FTYP,
                                 GF_ISOM_BOX_TYPE_MOOV,
                                 0 };
 static guint32 HEADER_BOXES[] = { GF_ISOM_BOX_TYPE_STYP,
+                                  GF_ISOM_BOX_TYPE_SIDX,
                                   GF_ISOM_BOX_TYPE_MOOF,
                                   0 };
 static guint32 DATA_BOXES[] = { GF_ISOM_BOX_TYPE_MDAT, 0 };
@@ -472,7 +473,7 @@ mp4mx_parse_moof(GF_Filter* filter, GF_FilterPid* pid, GstBuffer* buffer)
     sample->pts = gf_timestamp_rescale(pts, track->timescale, GST_SECOND);
     sample->pts += ctx->global_offset;
 
-    GST_DEBUG_OBJECT(ctx->sess->element,
+    GST_TRACE_OBJECT(ctx->sess->element,
                      "Sample %d [%s]: size: %" G_GUINT64_FORMAT ", "
                      "duration: %" GST_TIME_FORMAT ", "
                      "DTS: %" GST_TIME_FORMAT ", "
@@ -725,7 +726,7 @@ mp4mx_create_buffer_list(GF_Filter* filter, GF_FilterPid* pid)
     // Append the sample buffer
     gst_buffer_list_add(buffer_list, sample_buffer);
 
-    GST_DEBUG_OBJECT(
+    GST_TRACE_OBJECT(
       ctx->sess->element,
       "Added sample %d to the buffer list: size: %" G_GUINT64_FORMAT ", "
       "duration: %" GST_TIME_FORMAT ", "
@@ -953,7 +954,7 @@ mp4mx_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
 }
 
 GPAC_FilterPPRet
-mp4mx_consume(GF_FilterPid* pid, void** outptr)
+mp4mx_consume(GF_Filter* filter, GF_FilterPid* pid, void** outptr)
 {
   GPAC_MemOutPIDContext* ctx =
     (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);

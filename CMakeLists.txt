@@ -78,6 +78,13 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${GSTREAMER_INCLUDE_DI
 target_link_libraries(${PROJECT_NAME} ${GSTREAMER_LIBRARIES} ${GSTREAMER_BASE_LIBRARIES} ${GSTREAMER_VIDEO_LIBRARIES})
 target_link_directories(${PROJECT_NAME} PUBLIC ${GSTREAMER_LIBRARY_DIRS} ${GSTREAMER_BASE_LIBRARY_DIRS} ${GSTREAMER_VIDEO_LIBRARY_DIRS})
 
+# GIO
+pkg_check_modules(GIO REQUIRED gio-2.0)
+
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${GIO_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} ${GIO_LIBRARIES})
+target_link_directories(${PROJECT_NAME} PUBLIC ${GIO_LIBRARY_DIRS})
+
 # GPAC
 pkg_check_modules(GPAC REQUIRED gpac>=2.4)
 

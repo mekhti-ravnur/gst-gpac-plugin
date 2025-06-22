@@ -212,6 +212,12 @@ gst_gpac_sink_subclass_init(GstGpacSinkClass* klass)
     gpac_install_filter_properties(
       gobject_class, blacklist, params->info->filter_name);
 
+    // Install the signals
+    if (params->info->signal_presets) {
+      gpac_install_signals_by_presets(gobject_class,
+                                      params->info->signal_presets);
+    }
+
     // Check if we have any filter options to expose
     for (u32 i = 0; i < G_N_ELEMENTS(filter_options); i++) {
       filter_option_overrides* opts = &filter_options[i];
@@ -225,10 +231,11 @@ gst_gpac_sink_subclass_init(GstGpacSinkClass* klass)
     }
 
     // Register the internal element type
-    params->private_type = gst_gpac_tf_register_custom(params->info);
+    params->private_type = gst_gpac_tf_register_custom(params->info, TRUE);
   } else {
     gpac_install_src_pad_templates(gstelement_class);
     gpac_install_local_properties(gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_0);
+    gpac_install_all_signals(gobject_class);
   }
 
   // Set the metadata

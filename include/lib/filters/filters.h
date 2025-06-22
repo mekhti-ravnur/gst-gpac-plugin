@@ -30,16 +30,21 @@
 
 typedef enum
 {
+  GPAC_FILTER_PP_RET_INVALID = 0,
   GPAC_FILTER_PP_RET_VALID = 1,
 
   // Return types that do not result in a buffer
   GPAC_FILTER_PP_RET_EMPTY = ((1 << 1)),
   GPAC_FILTER_PP_RET_ERROR = ((1 << 2)),
+  // If we get signal bit set, consumer will try to consume again until no
+  // consumers return this signal
+  GPAC_FILTER_PP_RET_SIGNAL = ((1 << 3)),
 
   // Return types that result in a buffer
-  GPAC_FILTER_PP_RET_NULL = ((1 << 3) | GPAC_FILTER_PP_RET_VALID),
-  GPAC_FILTER_PP_RET_BUFFER = ((1 << 4) | GPAC_FILTER_PP_RET_VALID),
-  GPAC_FILTER_PP_RET_BUFFER_LIST = ((1 << 5) | GPAC_FILTER_PP_RET_VALID),
+  GPAC_MAY_HAVE_BUFFER = ((1 << 4)),
+  GPAC_FILTER_PP_RET_NULL = ((1 << 4) | GPAC_FILTER_PP_RET_VALID),
+  GPAC_FILTER_PP_RET_BUFFER = ((1 << 5) | GPAC_FILTER_PP_RET_VALID),
+  GPAC_FILTER_PP_RET_BUFFER_LIST = ((1 << 6) | GPAC_FILTER_PP_RET_VALID),
 } GPAC_FilterPPRet;
 
 #define GPAC_FILTER_PP_IMPL_DECL(filter_name)                               \
@@ -48,7 +53,8 @@ typedef enum
   GF_Err filter_name##_configure_pid(GF_Filter* filter, GF_FilterPid* pid); \
   GF_Err filter_name##_post_process(                                        \
     GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck);            \
-  GPAC_FilterPPRet filter_name##_consume(GF_FilterPid* pid, void** outptr);
+  GPAC_FilterPPRet filter_name##_consume(                                   \
+    GF_Filter* filter, GF_FilterPid* pid, void** outptr);
 
 #define GPAC_FILTER_PP_IMPL_DEFINE(filter_name) \
   { #filter_name,                               \
@@ -61,6 +67,7 @@ typedef enum
 // Forward declarations
 GPAC_FILTER_PP_IMPL_DECL(generic);
 GPAC_FILTER_PP_IMPL_DECL(mp4mx);
+GPAC_FILTER_PP_IMPL_DECL(dasher);
 
 typedef struct
 {
@@ -73,12 +80,15 @@ typedef struct
   GF_Err (*post_process)(GF_Filter* filter,
                          GF_FilterPid* pid,
                          GF_FilterPacket* pck);
-  GPAC_FilterPPRet (*consume)(GF_FilterPid* pid, void** outptr);
+  GPAC_FilterPPRet (*consume)(GF_Filter* filter,
+                              GF_FilterPid* pid,
+                              void** outptr);
 } post_process_registry_entry;
 
 static post_process_registry_entry pp_registry[] = {
   GPAC_FILTER_PP_IMPL_DEFINE(generic),
   GPAC_FILTER_PP_IMPL_DEFINE(mp4mx),
+  GPAC_FILTER_PP_IMPL_DEFINE(dasher),
 };
 
 static inline u32

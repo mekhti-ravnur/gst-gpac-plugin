@@ -92,10 +92,13 @@ process_link_directive(char* link,
 }
 
 gboolean
-gpac_session_init(GPAC_SessionContext* ctx, GstElement* element)
+gpac_session_init(GPAC_SessionContext* ctx,
+                  GstElement* element,
+                  GstGpacParams* params)
 {
   ctx->session = gf_fs_new_defaults(GF_FS_FLAG_NON_BLOCKING);
   ctx->element = element;
+  ctx->params = params;
   return ctx->session != NULL;
 }
 

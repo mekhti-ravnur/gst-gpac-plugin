@@ -55,6 +55,13 @@ typedef struct
   void* private_ctx;
 } GPAC_MemOutPIDContext;
 
+// This struct is used by gpac to set the private context of the memout filter
+typedef struct
+{
+  char* dst;
+  char* ext;
+  GF_FilterCapability caps[2];
+} GPAC_MemOutPrivateContext;
 typedef enum
 {
   GPAC_MEMOUT_PID_FLAG_NONE = 0,
@@ -111,17 +118,6 @@ gpac_memio_set_eos(GPAC_SessionContext* sess, gboolean eos);
 */
 gboolean
 gpac_memio_set_gst_caps(GPAC_SessionContext* sess, GstCaps* caps);
-
-/*! sets the GF_FilterCapability of the memory output filter
-    \param[in] sess the session context
-    \param[in] caps the gpac capabilities to set
-    \param[in] nb_caps the number of capabilities
-    \return TRUE if the capabilities were set successfully, FALSE otherwise
-*/
-gboolean
-gpac_memio_set_gf_caps(GPAC_SessionContext* sess,
-                       const GF_FilterCapability* caps,
-                       guint nb_caps);
 
 /*! consumes the output of the memory output filter
     \param[in] sess the session context

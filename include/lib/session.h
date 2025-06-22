@@ -28,6 +28,8 @@
 #include <gpac/filters.h>
 #include <gst/gst.h>
 
+#include "elements/common.h"
+
 typedef struct
 {
   GstElement* element;
@@ -37,16 +39,20 @@ typedef struct
 
   /*< internal >*/
   gboolean had_data_flow;
-  gboolean is_single;
+  GstGpacParams* params;
 } GPAC_SessionContext;
 
 /*! initializes a gpac filter session
     \param[in] ctx the session context to initialize
     \param[in] element the element to initialize the session with
+    \param[in] params single element parameters, can be NULL if the element
+                      is not a single filter element
     \return TRUE if the session was initialized successfully, FALSE otherwise
 */
 gboolean
-gpac_session_init(GPAC_SessionContext* ctx, GstElement* element);
+gpac_session_init(GPAC_SessionContext* ctx,
+                  GstElement* element,
+                  GstGpacParams* params);
 
 /*! closes a gpac filter session
     \param[in] ctx the session context to close

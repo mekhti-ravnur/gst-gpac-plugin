@@ -36,6 +36,7 @@
 #include "lib/pid.h"
 #include "lib/properties.h"
 #include "lib/session.h"
+#include "lib/signals.h"
 
 #include <gst/base/gstaggregator.h>
 #include <gst/gst.h>

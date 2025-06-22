@@ -30,6 +30,7 @@
 
 #include "lib/caps.h"
 #include "lib/properties.h"
+#include "lib/signals.h"
 
 #include <gst/gst.h>
 

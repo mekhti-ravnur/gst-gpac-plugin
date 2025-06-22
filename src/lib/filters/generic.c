@@ -66,6 +66,9 @@ generic_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
     (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
   GenericCtx* generic_ctx = (GenericCtx*)ctx->private_ctx;
 
+  if (!pck)
+    return GF_OK;
+
   // Get the data
   u32 size;
   const u8* data = gf_filter_pck_get_data(pck, &size);
@@ -88,7 +91,7 @@ generic_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
 }
 
 GPAC_FilterPPRet
-generic_consume(GF_FilterPid* pid, void** outptr)
+generic_consume(GF_Filter* filter, GF_FilterPid* pid, void** outptr)
 {
   GPAC_MemOutPIDContext* ctx =
     (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);

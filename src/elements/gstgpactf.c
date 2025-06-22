@@ -305,35 +305,29 @@ gst_gpac_tf_consume(GstAggregator* agg, Bool is_eos)
   void* output;
   GPAC_FilterPPRet ret;
   while ((ret = gpac_memio_consume(GPAC_SESS_CTX(GPAC_CTX), &output))) {
-    switch (ret) {
-      case GPAC_FILTER_PP_RET_EMPTY:
-        // No data available
-        GST_DEBUG_OBJECT(agg, "No more data available, exiting");
-        return GST_FLOW_OK;
+    if (ret & GPAC_FILTER_PP_RET_ERROR) {
+      // An error occurred, stop processing
+      goto error;
+    }
 
-      case GPAC_FILTER_PP_RET_ERROR:
-        // Unrecoverable error
-        goto error;
+    if (ret == GPAC_FILTER_PP_RET_EMPTY) {
+      // No data available
+      GST_DEBUG_OBJECT(agg, "No more data available, exiting");
+      return is_eos ? GST_FLOW_EOS : GST_FLOW_OK;
+    }
 
-      case GPAC_FILTER_PP_RET_NULL:
-        // memout is not connected, just send one dummy buffer
-        if (is_eos)
-          return GST_FLOW_EOS;
-        GST_DEBUG_OBJECT(
-          agg, "Sending dummy buffer, possibly connected to fakesink");
-        return gst_aggregator_finish_buffer(agg, gst_buffer_new());
-
-      case GPAC_FILTER_PP_RET_BUFFER:
+    gboolean had_signal = (ret & GPAC_FILTER_PP_RET_SIGNAL) != 0;
+    if (ret > GPAC_MAY_HAVE_BUFFER) {
+      if (HAS_FLAG(ret, GPAC_FILTER_PP_RET_BUFFER)) {
         // Send the buffer
         GST_DEBUG_OBJECT(agg, "Sending buffer");
         flow_ret = gst_aggregator_finish_buffer(agg, GST_BUFFER(output));
         GST_DEBUG_OBJECT(agg, "Buffer sent!");
-        break;
-
-      case GPAC_FILTER_PP_RET_BUFFER_LIST:
+      } else if (HAS_FLAG(ret, GPAC_FILTER_PP_RET_BUFFER_LIST)) {
         // Send the buffer list
         GST_DEBUG_OBJECT(agg, "Sending buffer list");
         GstBufferList* buffer_list = GST_BUFFER_LIST(output);
+
         // Show in debug the buffer list pts and dts (running time) and flags
         for (guint i = 0; i < gst_buffer_list_length(buffer_list); i++) {
           GstBuffer* buffer = gst_buffer_list_get(buffer_list, i);
@@ -355,24 +349,36 @@ gst_gpac_tf_consume(GstAggregator* agg, Bool is_eos)
             GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_HEADER) ? "Yes"
                                                                    : "No");
         }
+
         flow_ret = gst_aggregator_finish_buffer_list(agg, buffer_list);
         GST_DEBUG_OBJECT(agg, "Buffer list sent!");
-        break;
+      } else if (HAS_FLAG(ret, GPAC_FILTER_PP_RET_NULL)) {
+        // memout is not connected, just send one dummy buffer
+        if (had_signal)
+          continue;
 
-      default:
+        if (is_eos)
+          return GST_FLOW_EOS;
+
+        GST_DEBUG_OBJECT(
+          agg, "Sending dummy buffer, possibly connected to fakesink");
+
+        // We send only one buffer until we consumed all signals
+        return gst_aggregator_finish_buffer(agg, gst_buffer_new());
+      } else {
         GST_ELEMENT_WARNING(
           agg, STREAM, FAILED, (NULL), ("Unknown return value: %d", ret));
         g_warn_if_reached();
-        break;
-    }
+      }
 
-    if (flow_ret != GST_FLOW_OK) {
-      GST_ELEMENT_ERROR(agg,
-                        STREAM,
-                        FAILED,
-                        (NULL),
-                        ("Failed to finish buffer, ret: %d", flow_ret));
-      return flow_ret;
+      if (flow_ret != GST_FLOW_OK) {
+        GST_ELEMENT_ERROR(agg,
+                          STREAM,
+                          FAILED,
+                          (NULL),
+                          ("Failed to finish buffer, ret: %d", flow_ret));
+        return flow_ret;
+      }
     }
   }
 
@@ -494,11 +500,9 @@ gst_gpac_tf_negotiated_src_caps(GstAggregator* agg, GstCaps* caps)
   // Check if this is element is inside our sink bin
   GstObject* sink_bin = gst_element_get_parent(element);
   if (GST_IS_GPAC_SINK(sink_bin)) {
-    // We might have a predefined set of capabilities
-    if (params->is_single && params->info->gf_caps) {
-      return gpac_memio_set_gf_caps(GPAC_SESS_CTX(GPAC_CTX),
-                                    params->info->gf_caps,
-                                    params->info->nb_gf_caps);
+    // We might already have a destination set
+    if (params->is_single && params->info->destination) {
+      return TRUE;
     }
   }
 
@@ -825,8 +829,7 @@ gst_gpac_tf_start(GstAggregator* aggregator)
   }
 
   // Create the session
-  GPAC_SESS_CTX(GPAC_CTX)->is_single = params && params->is_single;
-  if (!gpac_session_init(GPAC_SESS_CTX(GPAC_CTX), element)) {
+  if (!gpac_session_init(GPAC_SESS_CTX(GPAC_CTX), element, params)) {
     GST_ELEMENT_ERROR(
       element, LIBRARY, INIT, (NULL), ("Failed to initialize GPAC session"));
     return FALSE;
@@ -1027,12 +1030,12 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
 
   // Add the subclass-specific properties and pad templates
   if (params->is_single) {
-    if (!GPAC_SE_IS_SINK_ONLY(params->info->flags)) {
-      gst_element_class_add_static_pad_template(gstelement_class,
-                                                &params->info->src_template);
-    } else {
+    if (params->is_inside_sink) {
       gst_element_class_add_static_pad_template(gstelement_class,
                                                 &internal_pad_template);
+    } else {
+      gst_element_class_add_static_pad_template(gstelement_class,
+                                                &params->info->src_template);
     }
 
     // Set property blacklist
@@ -1049,6 +1052,13 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
     gpac_install_filter_properties(
       gobject_class, blacklist, params->info->filter_name);
 
+    // Install the signals if not inside the sink bin
+    // They would be installed by the sink bin itself
+    if (!params->is_inside_sink && params->info->signal_presets) {
+      gpac_install_signals_by_presets(gobject_class,
+                                      params->info->signal_presets);
+    }
+
     // Check if we have any filter options to expose
     for (u32 i = 0; i < G_N_ELEMENTS(filter_options); i++) {
       filter_option_overrides* opts = &filter_options[i];
@@ -1063,6 +1073,9 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
   } else {
     gpac_install_src_pad_templates(gstelement_class);
     gpac_install_local_properties(gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_0);
+
+    if (!params->is_inside_sink)
+      gpac_install_all_signals(gobject_class);
 
     // We don't know which filters will be used, so we expose all options
     for (u32 i = 0; i < G_N_ELEMENTS(filter_options); i++) {
@@ -1116,6 +1129,7 @@ gst_gpac_tf_register(GstPlugin* plugin)
   GST_LOG("Registering regular gpac transform element");
   params = g_new0(GstGpacParams, 1);
   params->is_single = FALSE;
+  params->is_inside_sink = FALSE;
   type = g_type_register_static(
     GST_TYPE_GPAC_TF, "GstGpacTransformRegular", &subclass_typeinfo, 0);
   g_type_set_qdata(type, GST_GPAC_PARAMS_QDATA, params);
@@ -1140,6 +1154,7 @@ gst_gpac_tf_register(GstPlugin* plugin)
     GST_LOG("Registering %s transform subelement", info->filter_name);
     params = g_new0(GstGpacParams, 1);
     params->is_single = TRUE;
+    params->is_inside_sink = FALSE;
     params->info = info;
     const gchar* name = g_strdup_printf("gpac%s", info->alias_name);
     const gchar* type_name =
@@ -1164,7 +1179,7 @@ GST_ELEMENT_REGISTER_DEFINE_CUSTOM(gpac_tf, gst_gpac_tf_register);
 
 // #MARK: Private registration
 GType
-gst_gpac_tf_register_custom(subelement_info* se_info)
+gst_gpac_tf_register_custom(subelement_info* se_info, gboolean is_inside_sink)
 {
   const gchar* type_name =
     g_strdup_printf("GstGpacTransformPrivate%c%s",
@@ -1199,6 +1214,7 @@ gst_gpac_tf_register_custom(subelement_info* se_info)
 
   GstGpacParams* params = g_new0(GstGpacParams, 1);
   params->is_single = TRUE;
+  params->is_inside_sink = is_inside_sink;
   params->info = se_info;
 
   type = g_type_register_static(GST_TYPE_GPAC_TF, type_name, &type_info, 0);
