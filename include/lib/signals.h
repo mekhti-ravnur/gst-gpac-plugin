@@ -39,7 +39,7 @@ typedef enum
   // Dasher signals
   GPAC_SIGNAL_DASHER_MANIFEST,
   GPAC_SIGNAL_DASHER_MANIFEST_VARIANT,
-  GPAC_SIGNAL_DASHER_INIT_SEGMENT,
+  GPAC_SIGNAL_DASHER_SEGMENT_INIT,
   GPAC_SIGNAL_DASHER_SEGMENT,
 
   // Accessors
@@ -51,10 +51,10 @@ typedef enum
 // Signal Names
 // Starts from GPAC_SIGNAL_START and ends at GPAC_SIGNAL_END
 static const gchar* gpac_signal_names[] = {
-  "gpac-signal-dasher-manifest",
-  "gpac-signal-dasher-manifest-variant",
-  "gpac-signal-dasher-init-segment",
-  "gpac-signal-dasher-segment",
+  "get-manifest",
+  "get-manifest-variant",
+  "get-segment-init",
+  "get-segment",
 };
 
 /*! installs the signals to the GObject class

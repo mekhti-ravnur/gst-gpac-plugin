@@ -98,10 +98,10 @@ TEST_F(GstTestFixture, HLSMultiVariant)
 
   // Create signal handlers
   SignalMemoryCapture capture;
-  capture.connect(gpachlssink, "gpac-signal-dasher-manifest");
-  capture.connect(gpachlssink, "gpac-signal-dasher-manifest-variant");
-  capture.connect(gpachlssink, "gpac-signal-dasher-init-segment");
-  capture.connect(gpachlssink, "gpac-signal-dasher-segment");
+  capture.connect(gpachlssink, "get-manifest");
+  capture.connect(gpachlssink, "get-manifest-variant");
+  capture.connect(gpachlssink, "get-segment-init");
+  capture.connect(gpachlssink, "get-segment");
 
   // Add the sink to the pipeline
   gst_bin_add(GST_BIN(pipeline), gpachlssink);
@@ -132,10 +132,10 @@ TEST_F(GstTestFixture, HLSMultiVariant)
   //
 
   // Init: One for video representations and one for audio
-  ASSERT_EQ(capture.get_all("gpac-signal-dasher-init-segment").size(), 2);
+  ASSERT_EQ(capture.get_all("get-segment-init").size(), 2);
 
   // Segments: 3 for each video representation and 3 for audio
-  ASSERT_EQ(capture.get_all("gpac-signal-dasher-segment").size(), 4 * 3);
+  ASSERT_EQ(capture.get_all("get-segment").size(), 4 * 3);
 
   //
   // Check the streams

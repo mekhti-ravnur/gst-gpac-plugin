@@ -160,7 +160,7 @@ dasher_open_close_file(GF_Filter* filter, GF_FilterPid* pid, const char* name)
   } else {
     if (g_strcmp0(name, dasher_ctx->dst) == 0) {
       file->out = gpac_signal_try_emit(
-        io_ctx->sess->element, GPAC_SIGNAL_DASHER_INIT_SEGMENT, file->name);
+        io_ctx->sess->element, GPAC_SIGNAL_DASHER_SEGMENT_INIT, file->name);
     } else {
       file->out = gpac_signal_try_emit(
         io_ctx->sess->element, GPAC_SIGNAL_DASHER_SEGMENT, file->name);
