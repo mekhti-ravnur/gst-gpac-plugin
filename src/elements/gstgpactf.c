@@ -636,7 +636,11 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
         }
 
         // Send the key frame request
-        gst_gpac_request_idr(agg, pad, buffer);
+        // Only send IDR request for video pads
+        if (gst_pad_get_pad_template(pad) ==
+            gst_gpac_get_sink_template(TEMPLATE_VIDEO)) {
+          gst_gpac_request_idr(agg, pad, buffer);
+        }
 
         // Get the PID
         g_object_get(GST_AGGREGATOR_PAD(pad), "pid", &pid, NULL);
