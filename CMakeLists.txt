@@ -14,6 +14,7 @@ project(gpac_plugin VERSION 0.2.1 LANGUAGES C) # x-release-please-version
 
 # Options
 option(ENABLE_TESTS "Enable and build tests" OFF)
+option(PACKAGE "Package the plugin" OFF)
 
 # Set default build type to Release
 if(NOT CMAKE_BUILD_TYPE)
@@ -22,6 +23,13 @@ endif()
 
 # Define allowed values for CMAKE_BUILD_TYPE
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release)
+
+# Check if we are packaging
+if(PACKAGE)
+  message(STATUS "Building for packaging ")
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (e.g., Debug, Release)" FORCE)
+  set(ENABLE_TESTS OFF CACHE BOOL "Disable tests for packaging" FORCE)
+endif()
 
 # clang-tidy
 find_program(CLANG_TIDY NAMES clang-tidy)
@@ -50,7 +58,10 @@ file(GLOB_RECURSE SOURCES
 )
 
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
-set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_COMPILE_COMMANDS ON)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  EXPORT_COMPILE_COMMANDS ON
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)
 target_compile_options(${PROJECT_NAME} PRIVATE
   -Wall -Wextra -Werror
   -Wcast-align
@@ -114,4 +125,52 @@ endif()
 # Tests
 if(ENABLE_TESTS)
   add_subdirectory(tests)
+endif()
+
+# Try to get multiarch triple
+execute_process(
+  COMMAND dpkg-architecture -qDEB_HOST_MULTIARCH
+  OUTPUT_VARIABLE DEB_MULTIARCH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+# Default to plain /usr/lib if detection fails
+if(NOT DEB_MULTIARCH)
+  set(DEB_MULTIARCH "unknown")
+endif()
+
+# Install to GStreamer plugin directory
+install(TARGETS ${PROJECT_NAME}
+  LIBRARY DESTINATION /usr/lib/${DEB_MULTIARCH}/gstreamer-1.0
+)
+
+# Package
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_NAME gst-gpac-plugin
+  CACHE STRING "The resulting package name"
+)
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "GPAC GStreamer Plugin"
+  CACHE STRING "A GStreamer plugin for GPAC" FORCE
+)
+
+set(CPACK_PACKAGE_VENDOR "GPAC Project")
+set(CPACK_VERBATIM_VARIABLES YES)
+
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Deniz Ugur <deniz@gpac.io>")
+
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+
+set(CPACK_DEBIAN_PACKAGE_SECTION "libs")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libgstreamer1.0-0, libgstreamer-plugins-base1.0-0")
+
+if(PACKAGE)
+  message(STATUS "Packaging the plugin")
+  include(CPack)
 endif()
