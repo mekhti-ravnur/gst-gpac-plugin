@@ -168,13 +168,10 @@ gpac_signal_try_emit(GstElement* element,
     }
   } while ((parent = gst_element_get_parent(parent)));
 
-  GST_ELEMENT_WARNING(element,
-                      STREAM,
-                      FAILED,
-                      (NULL),
-                      ("Signal %s not registered for element %s",
-                       gpac_signal_names[id - 1],
-                       GST_OBJECT_NAME(element)));
+  GST_DEBUG_OBJECT(element,
+                   "Signal %s not registered for element %s",
+                   gpac_signal_names[id - 1],
+                   GST_OBJECT_NAME(element));
 
   return FALSE;
 }

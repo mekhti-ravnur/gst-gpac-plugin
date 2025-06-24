@@ -36,6 +36,7 @@ GST_DEBUG_CATEGORY_STATIC(gpac_dasher);
 typedef struct
 {
   gchar* name;        // Name of the file
+  GFile* file;        // GFile object for the file (optional)
   GOutputStream* out; // Output stream for the file
 } FileAbstract;
 
@@ -130,10 +131,27 @@ dasher_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
                      gf_filter_pid_get_name(evt->base.on_pid),
                      evt->file_del.url);
 
-    gpac_signal_try_emit(io_ctx->sess->element,
-                         GPAC_SIGNAL_DASHER_DELETE_SEGMENT,
-                         evt->file_del.url,
-                         NULL);
+    gboolean sent = gpac_signal_try_emit(io_ctx->sess->element,
+                                         GPAC_SIGNAL_DASHER_DELETE_SEGMENT,
+                                         evt->file_del.url,
+                                         NULL);
+
+    if (!sent) {
+      GFile* file = g_file_new_for_path(evt->file_del.url);
+      GError* error = NULL;
+      if (!g_file_delete(file, NULL, &error)) {
+        GST_ELEMENT_WARNING(io_ctx->sess->element,
+                            RESOURCE,
+                            FAILED,
+                            (NULL),
+                            ("Failed to delete file %s: %s",
+                             evt->file_del.url,
+                             error ? error->message : "Unknown error"));
+        if (error)
+          g_error_free(error);
+      }
+      g_object_unref(file);
+    }
 
     return GF_TRUE;
   }
@@ -156,6 +174,11 @@ dasher_open_close_file(GF_Filter* filter, GF_FilterPid* pid, const char* name)
                      dasher_ctx->current_file->name);
     if (dasher_ctx->current_file->out)
       g_output_stream_close(dasher_ctx->current_file->out, NULL, NULL);
+    if (dasher_ctx->current_file->file) {
+      g_object_unref(dasher_ctx->current_file->out);
+      g_object_unref(dasher_ctx->current_file->file);
+    }
+
     g_free(dasher_ctx->current_file->name);
     g_free(dasher_ctx->current_file);
     dasher_ctx->current_file = NULL;
@@ -174,29 +197,56 @@ dasher_open_close_file(GF_Filter* filter, GF_FilterPid* pid, const char* name)
   file->name = g_strdup(name);
 
   // Decide on the file flags
+  gboolean has_os = FALSE;
   if (dasher_ctx->is_manifest) {
     if (g_strcmp0(name, dasher_ctx->dst) == 0) {
-      gpac_signal_try_emit(io_ctx->sess->element,
-                           GPAC_SIGNAL_DASHER_MANIFEST,
-                           file->name,
-                           &file->out);
+      has_os = gpac_signal_try_emit(io_ctx->sess->element,
+                                    GPAC_SIGNAL_DASHER_MANIFEST,
+                                    file->name,
+                                    &file->out);
     } else {
-      gpac_signal_try_emit(io_ctx->sess->element,
-                           GPAC_SIGNAL_DASHER_MANIFEST_VARIANT,
-                           file->name,
-                           &file->out);
+      has_os = gpac_signal_try_emit(io_ctx->sess->element,
+                                    GPAC_SIGNAL_DASHER_MANIFEST_VARIANT,
+                                    file->name,
+                                    &file->out);
     }
   } else {
     if (g_strcmp0(name, dasher_ctx->dst) == 0) {
-      gpac_signal_try_emit(io_ctx->sess->element,
-                           GPAC_SIGNAL_DASHER_SEGMENT_INIT,
-                           file->name,
-                           &file->out);
+      has_os = gpac_signal_try_emit(io_ctx->sess->element,
+                                    GPAC_SIGNAL_DASHER_SEGMENT_INIT,
+                                    file->name,
+                                    &file->out);
     } else {
-      gpac_signal_try_emit(io_ctx->sess->element,
-                           GPAC_SIGNAL_DASHER_SEGMENT,
-                           file->name,
-                           &file->out);
+      has_os = gpac_signal_try_emit(io_ctx->sess->element,
+                                    GPAC_SIGNAL_DASHER_SEGMENT,
+                                    file->name,
+                                    &file->out);
+    }
+  }
+
+  if (!has_os) {
+    // Create a GFile and GOutputStream for the file
+    file->file = g_file_new_for_path(file->name);
+
+    GError* error = NULL;
+    file->out = G_OUTPUT_STREAM(g_file_replace(
+      file->file, NULL, FALSE, G_FILE_CREATE_NONE, NULL, &error));
+    if (!file->out) {
+      GST_ELEMENT_ERROR(io_ctx->sess->element,
+                        STREAM,
+                        FAILED,
+                        (NULL),
+                        ("Failed to open output stream for file %s: %s",
+                         file->name,
+                         error ? error->message : "Unknown error"));
+      g_error_free(error);
+      g_object_unref(file->file);
+
+      // Reset the current file pointer
+      g_free(file->name);
+      g_free(file);
+      dasher_ctx->current_file = NULL;
+      return;
     }
   }
 }
