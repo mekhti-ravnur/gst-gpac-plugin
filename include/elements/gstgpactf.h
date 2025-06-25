@@ -69,6 +69,9 @@ struct _GstGpacTransform
 
   /* Input Queue */
   GQueue* queue;
+
+  /* Sacrificial Buffer (for syncing) */
+  GstBuffer* sync_buffer;
 };
 
 /**

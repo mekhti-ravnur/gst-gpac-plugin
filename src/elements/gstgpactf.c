@@ -353,18 +353,29 @@ gst_gpac_tf_consume(GstAggregator* agg, Bool is_eos)
         flow_ret = gst_aggregator_finish_buffer_list(agg, buffer_list);
         GST_DEBUG_OBJECT(agg, "Buffer list sent!");
       } else if (HAS_FLAG(ret, GPAC_FILTER_PP_RET_NULL)) {
-        // memout is not connected, just send one dummy buffer
+        // If we had signals, consume all of them first
         if (had_signal)
           continue;
 
         if (is_eos)
           return GST_FLOW_EOS;
 
-        GST_DEBUG_OBJECT(
-          agg, "Sending dummy buffer, possibly connected to fakesink");
+        GST_DEBUG_OBJECT(agg,
+                         "Sending sync buffer, possibly connected to fakesink");
 
-        // We send only one buffer until we consumed all signals
-        return gst_aggregator_finish_buffer(agg, gst_buffer_new());
+        // We send only one buffer regardless of potential pending buffers
+        GstBuffer* buffer = gpac_tf->sync_buffer;
+        if (!buffer)
+          buffer = gst_buffer_new();
+
+        // Send the sync buffer
+        flow_ret = gst_aggregator_finish_buffer(agg, buffer);
+
+        // Buffer is transferred to the aggregator, so we set it to NULL
+        if (gpac_tf->sync_buffer)
+          gpac_tf->sync_buffer = NULL;
+
+        return flow_ret;
       } else {
         GST_ELEMENT_WARNING(
           agg, STREAM, FAILED, (NULL), ("Unknown return value: %d", ret));
@@ -659,6 +670,23 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
 
         // Enqueue the packet
         g_queue_push_tail(queue, packet);
+
+        // Select the highest PTS for sync buffer
+        gboolean is_video_pad = gst_pad_get_pad_template(GST_PAD(pad)) ==
+                                gst_gpac_get_sink_template(TEMPLATE_VIDEO);
+        gboolean is_only_pad = g_list_length(GST_ELEMENT(agg)->sinkpads) == 1;
+        if (is_video_pad || is_only_pad) {
+          if (gpac_tf->sync_buffer) {
+            guint64 current_pts = GST_BUFFER_PTS(buffer);
+            guint64 sync_pts = GST_BUFFER_PTS(gpac_tf->sync_buffer);
+            if (current_pts > sync_pts) {
+              gst_buffer_replace(&gpac_tf->sync_buffer, buffer);
+            }
+          } else {
+            // If no sync buffer exists, create one
+            gpac_tf->sync_buffer = gst_buffer_ref(buffer);
+          }
+        }
 
       next:
         if (buffer)

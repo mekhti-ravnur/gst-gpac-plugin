@@ -96,6 +96,18 @@ gpac_install_local_properties(GObjectClass* gobject_class,
                                G_PARAM_READWRITE));
         break;
 
+      case GPAC_PROP_SYNC:
+        g_object_class_install_property(
+          gobject_class,
+          prop,
+          g_param_spec_boolean(
+            "sync",
+            "Sync",
+            "Enable synchronization on the internal fakesink",
+            FALSE,
+            G_PARAM_READWRITE));
+        break;
+
       case GPAC_PROP_SEGDUR:
         g_object_class_install_property(
           gobject_class,
@@ -270,6 +282,9 @@ gpac_set_property(GPAC_PropertyContext* ctx,
       case GPAC_PROP_PRINT_STATS:
         ctx->print_stats = g_value_get_boolean(value);
         break;
+      case GPAC_PROP_SYNC:
+        ctx->sync = g_value_get_boolean(value);
+        break;
       default:
         return FALSE;
     }
@@ -338,6 +353,9 @@ gpac_get_property(GPAC_PropertyContext* ctx,
         break;
       case GPAC_PROP_PRINT_STATS:
         g_value_set_boolean(value, ctx->print_stats);
+        break;
+      case GPAC_PROP_SYNC:
+        g_value_set_boolean(value, ctx->sync);
         break;
       default:
         return FALSE;

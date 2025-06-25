@@ -41,6 +41,17 @@ gst_gpac_sink_set_property(GObject* object,
 {
   GstGpacSink* gpac_sink = GST_GPAC_SINK(object);
   g_return_if_fail(GST_IS_GPAC_SINK(object));
+
+  if (IS_TOP_LEVEL_PROPERTY(prop_id)) {
+    switch (prop_id) {
+      case GPAC_PROP_SYNC:
+        g_object_set_property(G_OBJECT(gpac_sink->sink), pspec->name, value);
+        return;
+      default:
+        break;
+    }
+  }
+
   // Relay the property to the internal transform element
   g_object_set_property(G_OBJECT(gpac_sink->tf), pspec->name, value);
 }
@@ -53,6 +64,17 @@ gst_gpac_sink_get_property(GObject* object,
 {
   GstGpacSink* gpac_sink = GST_GPAC_SINK(object);
   g_return_if_fail(GST_IS_GPAC_SINK(object));
+
+  if (IS_TOP_LEVEL_PROPERTY(prop_id)) {
+    switch (prop_id) {
+      case GPAC_PROP_SYNC:
+        g_object_get_property(G_OBJECT(gpac_sink->sink), pspec->name, value);
+        return;
+      default:
+        break;
+    }
+  }
+
   // Relay the property to the internal transform element
   g_object_get_property(G_OBJECT(gpac_sink->tf), pspec->name, value);
 }
@@ -194,7 +216,7 @@ gst_gpac_sink_subclass_init(GstGpacSinkClass* klass)
   // Set the property handlers
   gpac_install_global_properties(gobject_class);
   gpac_install_local_properties(
-    gobject_class, GPAC_PROP_PRINT_STATS, GPAC_PROP_0);
+    gobject_class, GPAC_PROP_PRINT_STATS, GPAC_PROP_SYNC, GPAC_PROP_0);
 
   // Add the subclass-specific properties and pad templates
   if (params->is_single) {
