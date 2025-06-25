@@ -318,6 +318,15 @@ gst_gpac_tf_consume(GstAggregator* agg, Bool is_eos)
 
     gboolean had_signal = (ret & GPAC_FILTER_PP_RET_SIGNAL) != 0;
     if (ret > GPAC_MAY_HAVE_BUFFER) {
+      if (output) {
+        // Notify the selected sample
+        gst_aggregator_selected_samples(agg,
+                                        GST_BUFFER_PTS(output),
+                                        GST_BUFFER_DTS(output),
+                                        GST_BUFFER_DURATION(output),
+                                        NULL);
+      }
+
       if (HAS_FLAG(ret, GPAC_FILTER_PP_RET_BUFFER)) {
         // Send the buffer
         GST_DEBUG_OBJECT(agg, "Sending buffer");
