@@ -48,7 +48,7 @@ typedef struct
 static signal_info signal_presets[] = {
   GPAC_SIGNAL_PRESET_RANGE("dasher_all",
                            GPAC_SIGNAL_DASHER_MANIFEST,
-                           GPAC_SIGNAL_DASHER_SEGMENT),
+                           GPAC_SIGNAL_DASHER_DELETE_SEGMENT),
 };
 
 void
@@ -89,7 +89,7 @@ register_signal(GObjectClass* klass, GPAC_SignalId id)
         NULL,
         NULL,
         NULL,
-        G_TYPE_NONE, // No return value
+        G_TYPE_BOOLEAN, // Whether the segment was deleted
         1,
         G_TYPE_STRING);
       break;
@@ -163,8 +163,10 @@ gpac_signal_try_emit(GstElement* element,
         g_signal_emit(parent, signal_id, 0, location, output_stream);
         return (*output_stream != NULL);
       }
-      g_signal_emit(parent, signal_id, 0, location);
-      return TRUE;
+
+      gboolean deleted = FALSE;
+      g_signal_emit(parent, signal_id, 0, location, &deleted);
+      return deleted;
     }
   } while ((parent = gst_element_get_parent(parent)));
 
