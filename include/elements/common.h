@@ -152,7 +152,8 @@ static subelement_info subelements[] = {
     GPAC_SE_SINK_ONLY | GPAC_SE_REQUIRES_MEMOUT,
     GPAC_TF_FILTER_OPTION_ARRAY(
       GPAC_TF_FILTER_OPTION("mname", "master.m3u8", TRUE),
-      GPAC_TF_FILTER_OPTION("cmaf", "cmf2", TRUE)),
+      GPAC_TF_FILTER_OPTION("cmaf", "cmf2", TRUE),
+      GPAC_TF_FILTER_OPTION("dmode", "dynamic", FALSE)),
     "master.m3u8",
     "dasher_all"),
   GPAC_TF_SUBELEMENT_AS("tsmx", "m2tsmx", MPEG_TS_CAPS, NULL),
