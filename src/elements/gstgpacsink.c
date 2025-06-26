@@ -257,7 +257,8 @@ gst_gpac_sink_subclass_init(GstGpacSinkClass* klass)
     params->private_type = gst_gpac_tf_register_custom(params->info, TRUE);
   } else {
     gpac_install_src_pad_templates(gstelement_class);
-    gpac_install_local_properties(gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_0);
+    gpac_install_local_properties(
+      gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_DESTINATION, GPAC_PROP_0);
     gpac_install_all_signals(gobject_class);
   }
 

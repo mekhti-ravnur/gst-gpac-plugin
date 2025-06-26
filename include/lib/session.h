@@ -37,6 +37,9 @@ typedef struct
   GF_Filter* memin;
   GF_Filter* memout;
 
+  // overrides
+  const gchar* destination;
+
   /*< internal >*/
   gboolean had_data_flow;
   GstGpacParams* params;

@@ -250,6 +250,17 @@ gpac_session_open(GPAC_SessionContext* ctx, gchar* graph)
         continue;
       }
 
+      if (ctx->destination) {
+        if (strstr(node, "dasher")) {
+          // We need to append "mname" option to the filter name
+          const gchar* dst = ctx->destination;
+          const gchar* after_slash = strrchr(ctx->destination, '/');
+          dst = after_slash ? after_slash + 1 : ctx->destination;
+          gchar* new_node = g_strdup_printf("%s:gpac:mname=%s", node, dst);
+          node = new_node;
+        }
+      }
+
       filter = gf_fs_load_filter(ctx->session, node, &e);
     }
 

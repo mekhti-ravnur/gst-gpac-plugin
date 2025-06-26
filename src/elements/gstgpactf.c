@@ -521,7 +521,8 @@ gst_gpac_tf_negotiated_src_caps(GstAggregator* agg, GstCaps* caps)
   GstObject* sink_bin = gst_element_get_parent(element);
   if (GST_IS_GPAC_SINK(sink_bin)) {
     // We might already have a destination set
-    if (params->is_single && params->info->destination) {
+    if ((params->is_single && params->info->destination) ||
+        GPAC_PROP_CTX(GPAC_CTX)->destination) {
       return TRUE;
     }
   }
@@ -933,6 +934,9 @@ gst_gpac_tf_start(GstAggregator* aggregator)
     graph = g_strdup(GPAC_PROP_CTX(GPAC_CTX)->graph);
   }
 
+  // Set the destination override on session context
+  GPAC_SESS_CTX(GPAC_CTX)->destination = GPAC_PROP_CTX(GPAC_CTX)->destination;
+
   gpac_return_val_if_fail(gpac_session_open(GPAC_SESS_CTX(GPAC_CTX), graph),
                           FALSE);
   g_free(graph);
@@ -941,7 +945,8 @@ gst_gpac_tf_start(GstAggregator* aggregator)
   gboolean is_inside_sink = GST_IS_GPAC_SINK(gst_element_get_parent(element));
   gboolean requires_memout =
     params->info && GPAC_SE_IS_REQUIRES_MEMOUT(params->info->flags);
-  requires_memout = !is_inside_sink || (is_inside_sink && requires_memout);
+  requires_memout = !is_inside_sink || (is_inside_sink && requires_memout) ||
+                    GPAC_PROP_CTX(GPAC_CTX)->destination;
 
   if (requires_memout) {
     gpac_return_val_if_fail(
@@ -1119,7 +1124,8 @@ gst_gpac_tf_subclass_init(GstGpacTransformClass* klass)
     }
   } else {
     gpac_install_src_pad_templates(gstelement_class);
-    gpac_install_local_properties(gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_0);
+    gpac_install_local_properties(
+      gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_DESTINATION, GPAC_PROP_0);
 
     if (!params->is_inside_sink)
       gpac_install_all_signals(gobject_class);

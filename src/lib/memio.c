@@ -114,11 +114,23 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
   } else {
     gf_fs_add_filter_register(sess->session, &MemOutRegister);
     gchar* filter_name = "memout";
-    if (sess->params && sess->params->info && sess->params->info->destination) {
-      // If we have a specific destination, use it
-      filter_name =
-        g_strdup_printf("memout:dst=%s", sess->params->info->destination);
+    gboolean link_to_last_filter = sess->params && sess->params->is_single;
+
+    // Try to retrieve a destination
+    const gchar* dst = NULL;
+    if (sess->destination) {
+      // If a destination is provided, use it
+      dst = sess->destination;
+      link_to_last_filter = TRUE;
+    } else if (sess->params && sess->params->info &&
+               sess->params->info->destination) {
+      // If the session parameters have a destination, use it
+      dst = sess->params->info->destination;
     }
+
+    // If we have a specific destination, use it
+    if (dst)
+      filter_name = g_strdup_printf("memout:dst=%s", dst);
 
     memio = sess->memout = gf_fs_load_filter(sess->session, filter_name, &e);
     if (!sess->memout) {
@@ -127,9 +139,10 @@ gpac_memio_new(GPAC_SessionContext* sess, GPAC_MemIoDirection dir)
       return e;
     }
 
-    // If we are in single filter mode, we explicitly connect to the last loaded
-    // filter to avoid connecting to the memin filter unnecessarily
-    if (sess->params && sess->params->is_single) {
+    // If we are in single filter mode (explicit destination), we explicitly
+    // connect to the last loaded filter to avoid connecting to the memin filter
+    // unnecessarily
+    if (link_to_last_filter) {
       u32 count = gf_fs_get_filters_count(sess->session);
       GF_Filter* filter = gf_fs_get_filter(sess->session, count - 2);
       if (filter) {
