@@ -43,6 +43,7 @@ static GPAC_Arg visible_properties[] = {
   GPAC_DEF_ARG("for-test", TRUE),
   GPAC_DEF_ARG("old-arch", TRUE),
   GPAC_DEF_ARG("strict-error", TRUE),
+  GPAC_DEF_ARG("broken-cert", TRUE),
   { 0 },
 };
 
