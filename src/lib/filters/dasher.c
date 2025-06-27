@@ -23,11 +23,13 @@
  *
  */
 
+#include "gpacmessages.h"
 #include "lib/filters/filters.h"
 #include "lib/memio.h"
 #include "lib/signals.h"
 
 #include <gio/gio.h>
+#include <gpac/mpd.h>
 #include <gpac/network.h>
 
 GST_DEBUG_CATEGORY_STATIC(gpac_dasher);
@@ -43,8 +45,10 @@ typedef struct
 typedef struct
 {
   // current file being processed
-  FileAbstract* current_file;
+  FileAbstract* main_file;
+  FileAbstract* llhls_file; // for low-latency HLS chunks
 
+  gchar* llhas_template;
   gboolean is_manifest;
   guint32 dash_state;
   const gchar* dst; // destination file path
@@ -61,19 +65,33 @@ dasher_ctx_init(void** process_ctx)
 }
 
 void
+dasher_free_file(FileAbstract* file)
+{
+  if (file) {
+    if (file->out) {
+      g_output_stream_close(file->out, NULL, NULL);
+      g_object_unref(file->out);
+    }
+    if (file->file) {
+      g_object_unref(file->file);
+    }
+    g_free(file->name);
+    g_free(file);
+  }
+}
+
+void
 dasher_ctx_free(void* process_ctx)
 {
   DasherCtx* ctx = (DasherCtx*)process_ctx;
 
-  // Free the current file if it exists
-  if (ctx->current_file) {
-    if (ctx->current_file->out) {
-      g_output_stream_close(ctx->current_file->out, NULL, NULL);
-      g_object_unref(ctx->current_file->out);
-    }
-    g_free(ctx->current_file->name);
-    g_free(ctx->current_file);
-  }
+  // Free the main file if it exists
+  dasher_free_file(ctx->main_file);
+  dasher_free_file(ctx->llhls_file);
+
+  // Free the llhas template if it exists
+  if (ctx->llhas_template)
+    g_free(ctx->llhas_template);
 
   // Free the context
   g_free(ctx);
@@ -159,29 +177,40 @@ dasher_process_event(GF_Filter* filter, const GF_FilterEvent* evt)
 }
 
 void
-dasher_open_close_file(GF_Filter* filter, GF_FilterPid* pid, const char* name)
+dasher_open_close_file(GF_Filter* filter,
+                       GF_FilterPid* pid,
+                       const gchar* name,
+                       gboolean is_llhls)
 {
   GPAC_MemIoContext* io_ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
   GPAC_MemOutPIDContext* ctx =
     (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
   DasherCtx* dasher_ctx = (DasherCtx*)ctx->private_ctx;
 
+  // Get a pointer to the requested file
+  FileAbstract** file = NULL;
+  if (is_llhls) {
+    file = &dasher_ctx->llhls_file;
+  } else {
+    file = &dasher_ctx->main_file;
+  }
+
   // If the file is already open, close it
-  if (dasher_ctx->current_file) {
+  if (*file) {
     GST_TRACE_OBJECT(io_ctx->sess->element,
                      "Closing file for PID %s: %s",
                      gf_filter_pid_get_name(pid),
-                     dasher_ctx->current_file->name);
-    if (dasher_ctx->current_file->out)
-      g_output_stream_close(dasher_ctx->current_file->out, NULL, NULL);
-    if (dasher_ctx->current_file->file) {
-      g_object_unref(dasher_ctx->current_file->out);
-      g_object_unref(dasher_ctx->current_file->file);
+                     (*file)->name);
+    if ((*file)->out)
+      g_output_stream_close((*file)->out, NULL, NULL);
+    if ((*file)->file) {
+      g_object_unref((*file)->out);
+      g_object_unref((*file)->file);
     }
 
-    g_free(dasher_ctx->current_file->name);
-    g_free(dasher_ctx->current_file);
-    dasher_ctx->current_file = NULL;
+    g_free((*file)->name);
+    g_free(*file);
+    *file = NULL;
   }
 
   if (!name)
@@ -193,8 +222,8 @@ dasher_open_close_file(GF_Filter* filter, GF_FilterPid* pid, const char* name)
                    name);
 
   // Create a new file
-  FileAbstract* file = dasher_ctx->current_file = g_new0(FileAbstract, 1);
-  file->name = g_strdup(name);
+  *file = g_new0(FileAbstract, 1);
+  (*file)->name = g_strdup(name);
 
   // Decide on the file flags
   gboolean has_os = FALSE;
@@ -202,50 +231,50 @@ dasher_open_close_file(GF_Filter* filter, GF_FilterPid* pid, const char* name)
     if (g_strcmp0(name, dasher_ctx->dst) == 0) {
       has_os = gpac_signal_try_emit(io_ctx->sess->element,
                                     GPAC_SIGNAL_DASHER_MANIFEST,
-                                    file->name,
-                                    &file->out);
+                                    (*file)->name,
+                                    &(*file)->out);
     } else {
       has_os = gpac_signal_try_emit(io_ctx->sess->element,
                                     GPAC_SIGNAL_DASHER_MANIFEST_VARIANT,
-                                    file->name,
-                                    &file->out);
+                                    (*file)->name,
+                                    &(*file)->out);
     }
   } else {
     if (g_strcmp0(name, dasher_ctx->dst) == 0) {
       has_os = gpac_signal_try_emit(io_ctx->sess->element,
                                     GPAC_SIGNAL_DASHER_SEGMENT_INIT,
-                                    file->name,
-                                    &file->out);
+                                    (*file)->name,
+                                    &(*file)->out);
     } else {
       has_os = gpac_signal_try_emit(io_ctx->sess->element,
                                     GPAC_SIGNAL_DASHER_SEGMENT,
-                                    file->name,
-                                    &file->out);
+                                    (*file)->name,
+                                    &(*file)->out);
     }
   }
 
   if (!has_os) {
     // Create a GFile and GOutputStream for the file
-    file->file = g_file_new_for_path(file->name);
+    (*file)->file = g_file_new_for_path((*file)->name);
 
     GError* error = NULL;
-    file->out = G_OUTPUT_STREAM(g_file_replace(
-      file->file, NULL, FALSE, G_FILE_CREATE_NONE, NULL, &error));
-    if (!file->out) {
+    (*file)->out = G_OUTPUT_STREAM(g_file_replace(
+      (*file)->file, NULL, FALSE, G_FILE_CREATE_NONE, NULL, &error));
+    if (!(*file)->out) {
       GST_ELEMENT_ERROR(io_ctx->sess->element,
                         STREAM,
                         FAILED,
                         (NULL),
                         ("Failed to open output stream for file %s: %s",
-                         file->name,
+                         (*file)->name,
                          error ? error->message : "Unknown error"));
       g_error_free(error);
-      g_object_unref(file->file);
+      g_object_unref((*file)->file);
 
       // Reset the current file pointer
-      g_free(file->name);
-      g_free(file);
-      dasher_ctx->current_file = NULL;
+      g_free((*file)->name);
+      g_free(*file);
+      *file = NULL;
       return;
     }
   }
@@ -262,19 +291,114 @@ dasher_setup_file(GF_Filter* filter, GF_FilterPid* pid)
   const GF_PropertyValue* p =
     gf_filter_pid_get_property(pid, GF_PROP_PID_OUTPATH);
   if (p && p->value.string) {
-    dasher_open_close_file(filter, pid, p->value.string);
+    dasher_open_close_file(filter, pid, p->value.string, FALSE);
     return;
   }
 
   if (dasher_ctx->dst) {
-    dasher_open_close_file(filter, pid, dasher_ctx->dst);
+    dasher_open_close_file(filter, pid, dasher_ctx->dst, FALSE);
   } else {
     p = gf_filter_pid_get_property(pid, GF_PROP_PID_FILEPATH);
     if (!p)
       p = gf_filter_pid_get_property(pid, GF_PROP_PID_URL);
     if (p && p->value.string)
-      dasher_open_close_file(filter, pid, p->value.string);
+      dasher_open_close_file(filter, pid, p->value.string, FALSE);
   }
+}
+
+GF_Err
+dasher_ensure_file(GF_Filter* filter, GF_FilterPid* pid, gboolean is_llhls)
+{
+  GPAC_MemIoContext* io_ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  GPAC_MemOutPIDContext* ctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  DasherCtx* dasher_ctx = (DasherCtx*)ctx->private_ctx;
+
+  FileAbstract** file = NULL;
+  if (is_llhls) {
+    file = &dasher_ctx->llhls_file;
+  } else {
+    file = &dasher_ctx->main_file;
+  }
+
+  // If we don't have a file, set it up
+  if (G_UNLIKELY(!(*file))) {
+    GST_ELEMENT_ERROR(
+      io_ctx->sess->element,
+      STREAM,
+      FAILED,
+      (NULL),
+      ("Failed to ensure file for PID %s", gf_filter_pid_get_name(pid)));
+    return GF_IO_ERR;
+  }
+
+  if (G_UNLIKELY(!(*file)->out)) {
+    GST_ELEMENT_ERROR(io_ctx->sess->element,
+                      STREAM,
+                      FAILED,
+                      (NULL),
+                      ("No output stream for file %s",
+                       (*file)->name ? (*file)->name : "unknown"));
+    gf_filter_abort(filter);
+    return GF_IO_ERR;
+  }
+
+  return GF_OK;
+}
+
+GF_Err
+dasher_write_data(GF_Filter* filter,
+                  GF_FilterPid* pid,
+                  FileAbstract* file,
+                  const u8* data,
+                  u32 size)
+{
+  GPAC_MemIoContext* io_ctx = (GPAC_MemIoContext*)gf_filter_get_rt_udta(filter);
+  GPAC_MemOutPIDContext* ctx =
+    (GPAC_MemOutPIDContext*)gf_filter_pid_get_udta(pid);
+  DasherCtx* dasher_ctx = (DasherCtx*)ctx->private_ctx;
+
+  if (!file || !file->out) {
+    GST_ELEMENT_ERROR(io_ctx->sess->element,
+                      STREAM,
+                      FAILED,
+                      (NULL),
+                      ("No output stream for file %s",
+                       file && file->name ? file->name : "unknown"));
+    return GF_IO_ERR;
+  }
+
+  gssize bytes_written =
+    g_output_stream_write(file->out, data, size, NULL, NULL);
+  if (bytes_written < 0) {
+    GST_ELEMENT_ERROR(io_ctx->sess->element,
+                      STREAM,
+                      FAILED,
+                      (NULL),
+                      ("Failed to write data to output stream for file %s",
+                       file->name ? file->name : "unknown"));
+    return GF_IO_ERR;
+  }
+
+  if (bytes_written < (gssize)size) {
+    GST_ELEMENT_WARNING(io_ctx->sess->element,
+                        STREAM,
+                        FAILED,
+                        (NULL),
+                        ("Partial write to output stream for file %s, "
+                         "expected: %" G_GSIZE_FORMAT
+                         ", written: %" G_GSSIZE_FORMAT,
+                         file->name ? file->name : "unknown",
+                         (gssize)size,
+                         bytes_written));
+  }
+
+  GST_TRACE_OBJECT(io_ctx->sess->element,
+                   "Wrote %s, size: %" G_GSIZE_FORMAT,
+                   file->name ? file->name : "unknown",
+                   (gssize)size);
+
+  return GF_OK;
 }
 
 GF_Err
@@ -287,8 +411,10 @@ dasher_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
   const GF_PropertyValue *fname, *p;
 
   if (!pck) {
-    if (gf_filter_pid_is_eos(pid) && !gf_filter_pid_is_flush_eos(pid))
-      dasher_open_close_file(filter, pid, NULL);
+    if (gf_filter_pid_is_eos(pid) && !gf_filter_pid_is_flush_eos(pid)) {
+      dasher_open_close_file(filter, pid, NULL, FALSE);
+      dasher_open_close_file(filter, pid, NULL, TRUE);
+    }
     return GF_OK; // No packet to process
   }
 
@@ -310,8 +436,8 @@ dasher_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
 
   if (start) {
     // Previous file has ended, move to the next file
-    if (dasher_ctx->current_file)
-      dasher_open_close_file(filter, pid, NULL);
+    if (dasher_ctx->main_file)
+      dasher_open_close_file(filter, pid, NULL, FALSE);
 
     const GF_PropertyValue *ext, *fnum, *rel;
     Bool explicit_overwrite = GF_FALSE;
@@ -332,22 +458,17 @@ dasher_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
       name = fname->value.string;
 
     if (name) {
-      dasher_open_close_file(filter, pid, name);
-    } else if (!dasher_ctx->current_file) {
+      dasher_open_close_file(filter, pid, name, FALSE);
+    } else if (!dasher_ctx->main_file) {
       dasher_setup_file(filter, pid);
     }
-  }
 
-  // We must be actively working on a file by now
-  if (G_UNLIKELY(!dasher_ctx->current_file)) {
-    GST_ELEMENT_ERROR(io_ctx->sess->element,
-                      STREAM,
-                      FAILED,
-                      (NULL),
-                      ("No current file to write to for PID %s\n",
-                       gf_filter_pid_get_name(pid)));
-    gf_filter_abort(filter);
-    return GF_IO_ERR;
+    fname = gf_filter_pck_get_property(pck, GF_PROP_PCK_LLHAS_TEMPLATE);
+    if (fname) {
+      if (dasher_ctx->llhas_template)
+        g_free(dasher_ctx->llhas_template);
+      dasher_ctx->llhas_template = g_strdup(fname->value.string);
+    }
   }
 
   // Get the data
@@ -363,52 +484,34 @@ dasher_post_process(GF_Filter* filter, GF_FilterPid* pid, GF_FilterPacket* pck)
     return GF_OK;
   }
 
-  // Get the current file
-  FileAbstract* file = dasher_ctx->current_file;
-  if (G_UNLIKELY(!file->out)) {
-    GST_ELEMENT_ERROR(io_ctx->sess->element,
-                      STREAM,
-                      FAILED,
-                      (NULL),
-                      ("No output stream for file %s",
-                       dasher_ctx->current_file->name
-                         ? dasher_ctx->current_file->name
-                         : "unknown"));
-    gf_filter_abort(filter);
-    return GF_IO_ERR;
+  // We must be actively working on a file by now
+  gpac_return_if_fail(dasher_ensure_file(filter, pid, FALSE));
+
+  // If we are in low-latency HLS mode, we need to handle the llhas chunks
+  p = gf_filter_pck_get_property(pck, GF_PROP_PCK_LLHAS_FRAG_NUM);
+  if (p) {
+    char* llhas_chunkname = gf_mpd_resolve_subnumber(
+      dasher_ctx->llhas_template, dasher_ctx->main_file->name, p->value.uint);
+    dasher_open_close_file(
+      filter, pid, llhas_chunkname, TRUE); // Open the llhls file
+    gf_free(llhas_chunkname);
+
+    // Ensure the file is set up for llhls
+    gpac_return_if_fail(dasher_ensure_file(filter, pid, TRUE));
   }
 
   // Write the data to the output stream
-  gssize bytes_written =
-    g_output_stream_write(file->out, data, size, NULL, NULL);
-  if (bytes_written < 0) {
-    GST_ELEMENT_ERROR(io_ctx->sess->element,
-                      STREAM,
-                      FAILED,
-                      (NULL),
-                      ("Failed to write data to output stream for file %s",
-                       file->name ? file->name : "unknown"));
-  } else if (bytes_written < (gssize)size) {
-    GST_ELEMENT_WARNING(io_ctx->sess->element,
-                        STREAM,
-                        FAILED,
-                        (NULL),
-                        ("Partial write to output stream for file %s, "
-                         "expected: %" G_GSIZE_FORMAT
-                         ", written: %" G_GSSIZE_FORMAT,
-                         file->name ? file->name : "unknown",
-                         (gssize)size,
-                         bytes_written));
+  gpac_return_if_fail(
+    dasher_write_data(filter, pid, dasher_ctx->main_file, data, size));
+  if (dasher_ctx->llhls_file) {
+    // Write to the llhls file if it exists
+    gpac_return_if_fail(
+      dasher_write_data(filter, pid, dasher_ctx->llhls_file, data, size));
   }
 
-  GST_TRACE_OBJECT(io_ctx->sess->element,
-                   "Sent %s over a signal, size: %" G_GSIZE_FORMAT,
-                   file->name ? file->name : "unknown",
-                   (gssize)size);
-
   // Close the output stream
-  if (end)
-    dasher_open_close_file(filter, pid, NULL);
+  if (end && dasher_ctx->is_manifest)
+    dasher_open_close_file(filter, pid, NULL, FALSE);
 
   return GF_OK;
 }
