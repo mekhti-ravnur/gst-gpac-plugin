@@ -22,11 +22,13 @@
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  */
+
 #pragma once
 
 #include "lib/caps.h"
 #include "lib/properties.h"
 #include "lib/signals.h"
+#include "utils.h"
 
 #include <gst/gst.h>
 
@@ -186,10 +188,5 @@ typedef struct _GstGpacParams
  */
 GType
 gst_gpac_tf_register_custom(subelement_info* se_info, gboolean is_inside_sink);
-
-/**
- * Helper macros
- */
-#define HAS_FLAG(flags, flag) (((flags) & (flag)) == (flag))
 
 G_END_DECLS

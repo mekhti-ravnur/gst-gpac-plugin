@@ -27,13 +27,13 @@
 #include "gpacmessages.h"
 #include "lib/pid.h"
 
-#define SEGMENT_HANDLER_SIGNATURE(prop_nickname)                \
-  gboolean prop_nickname##_segment_handler(GPAC_PROP_IMPL_ARGS)
+#define SEGMENT_HANDLER_SIGNATURE(prop_nickname)                    \
+  gboolean prop_nickname##_segment_handler(GPAC_PID_PROP_IMPL_ARGS)
 
-#define DEFAULT_HANDLER(prop_nickname)                          \
-  gboolean prop_nickname##_segment_handler(GPAC_PROP_IMPL_ARGS) \
-  {                                                             \
-    return FALSE;                                               \
+#define DEFAULT_HANDLER(prop_nickname)                              \
+  gboolean prop_nickname##_segment_handler(GPAC_PID_PROP_IMPL_ARGS) \
+  {                                                                 \
+    return FALSE;                                                   \
   }
 
 //

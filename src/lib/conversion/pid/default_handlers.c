@@ -27,22 +27,22 @@
 #include "gpacmessages.h"
 #include "lib/pid.h"
 
-#define DEFAULT_HANDLER_SIGNATURE(prop_nickname)                           \
-  gboolean prop_nickname##_default_handler(GPAC_PROP_IMPL_ARGS_NO_ELEMENT)
+#define DEFAULT_HANDLER_SIGNATURE(prop_nickname)                               \
+  gboolean prop_nickname##_default_handler(GPAC_PID_PROP_IMPL_ARGS_NO_ELEMENT)
 
 // Optional if not explicitly marked as mandatory
-#define DEFAULT_HANDLER(prop_nickname)                                     \
-  gboolean prop_nickname##_default_handler(GPAC_PROP_IMPL_ARGS_NO_ELEMENT) \
-  {                                                                        \
-    return TRUE;                                                           \
+#define DEFAULT_HANDLER(prop_nickname)                                         \
+  gboolean prop_nickname##_default_handler(GPAC_PID_PROP_IMPL_ARGS_NO_ELEMENT) \
+  {                                                                            \
+    return TRUE;                                                               \
   }
 
-#define DEFAULT_HANDLER_MANDATORY(prop_nickname, prop_4cc)                 \
-  gboolean prop_nickname##_default_handler(GPAC_PROP_IMPL_ARGS_NO_ELEMENT) \
-  {                                                                        \
-    SKIP_IF_SET(prop_4cc)                                                  \
-    GST_WARNING("Could not determine the value for %s", #prop_nickname);   \
-    return FALSE;                                                          \
+#define DEFAULT_HANDLER_MANDATORY(prop_nickname, prop_4cc)                     \
+  gboolean prop_nickname##_default_handler(GPAC_PID_PROP_IMPL_ARGS_NO_ELEMENT) \
+  {                                                                            \
+    SKIP_IF_SET(prop_4cc)                                                      \
+    GST_WARNING("Could not determine the value for %s", #prop_nickname);       \
+    return FALSE;                                                              \
   }
 
 //

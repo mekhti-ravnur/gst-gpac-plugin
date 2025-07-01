@@ -22,10 +22,13 @@
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  */
+
 #include "lib/memio.h"
 #include "gpacmessages.h"
 #include "lib/caps.h"
 #include "lib/pid.h"
+#include "post-process/common.h"
+#include "post-process/registry.h"
 #include <gst/video/video-event.h>
 
 static GF_Err

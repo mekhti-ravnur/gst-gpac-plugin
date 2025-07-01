@@ -23,8 +23,8 @@
  *
  */
 
+#include "common.h"
 #include "elements/gstgpactf.h"
-#include "lib/filters/filters.h"
 #include "lib/memio.h"
 #include <gpac/internal/isomedia_dev.h>
 

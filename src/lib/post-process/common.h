@@ -23,18 +23,12 @@
  *
  */
 
-#include "lib/main.h"
-#include "gpacmessages.h"
+#pragma once
 
-gboolean
-gpac_init(GPAC_Context* ctx)
-{
-  gpac_return_val_if_fail(gf_sys_init(GF_MemTrackerNone, NULL), FALSE);
-  return TRUE;
-}
+#include "registry.h"
 
-void
-gpac_destroy(GPAC_Context* ctx)
+typedef struct
 {
-  gf_sys_close();
-}
+  post_process_registry_entry* entry;
+  void* private_ctx;
+} GPAC_MemOutPIDContext;

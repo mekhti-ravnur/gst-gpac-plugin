@@ -69,8 +69,10 @@ typedef struct
   guint64 idr_next;
 } GpacPadPrivate;
 
-#define GPAC_PROP_IMPL_ARGS_NO_ELEMENT GpacPadPrivate *priv, GF_FilterPid *pid
-#define GPAC_PROP_IMPL_ARGS GstElement *element, GPAC_PROP_IMPL_ARGS_NO_ELEMENT
+#define GPAC_PID_PROP_IMPL_ARGS_NO_ELEMENT \
+  GpacPadPrivate *priv, GF_FilterPid *pid
+#define GPAC_PID_PROP_IMPL_ARGS                           \
+  GstElement *element, GPAC_PID_PROP_IMPL_ARGS_NO_ELEMENT
 
 /*! reconfigures a pid based on the given element and pad private data
     \param[in] element the element that the pad belongs to
@@ -78,7 +80,7 @@ typedef struct
     \param[in] pid the pid to reconfigure for the pad
     \return TRUE if the pad was reconfigured successfully, FALSE otherwise
 */
-gboolean gpac_pid_reconfigure(GPAC_PROP_IMPL_ARGS);
+gboolean gpac_pid_reconfigure(GPAC_PID_PROP_IMPL_ARGS);
 
 /*! creates a new filter pid
     \param[in] sess the session context

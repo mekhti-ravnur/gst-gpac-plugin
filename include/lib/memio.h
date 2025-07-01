@@ -27,7 +27,6 @@
 
 #include <gpac/filters.h>
 
-#include "lib/filters/filters.h"
 #include "lib/session.h"
 
 typedef enum
@@ -49,11 +48,24 @@ typedef struct
   gboolean is_continuous;
 } GPAC_MemIoContext;
 
-typedef struct
+typedef enum
 {
-  post_process_registry_entry* entry;
-  void* private_ctx;
-} GPAC_MemOutPIDContext;
+  GPAC_FILTER_PP_RET_INVALID = 0,
+  GPAC_FILTER_PP_RET_VALID = 1,
+
+  // Return types that do not result in a buffer
+  GPAC_FILTER_PP_RET_EMPTY = ((1 << 1)),
+  GPAC_FILTER_PP_RET_ERROR = ((1 << 2)),
+  // If we get signal bit set, consumer will try to consume again until no
+  // consumers return this signal
+  GPAC_FILTER_PP_RET_SIGNAL = ((1 << 3)),
+
+  // Return types that result in a buffer
+  GPAC_MAY_HAVE_BUFFER = ((1 << 4)),
+  GPAC_FILTER_PP_RET_NULL = ((1 << 4) | GPAC_FILTER_PP_RET_VALID),
+  GPAC_FILTER_PP_RET_BUFFER = ((1 << 5) | GPAC_FILTER_PP_RET_VALID),
+  GPAC_FILTER_PP_RET_BUFFER_LIST = ((1 << 6) | GPAC_FILTER_PP_RET_VALID),
+} GPAC_FilterPPRet;
 
 // This struct is used by gpac to set the private context of the memout filter
 typedef struct

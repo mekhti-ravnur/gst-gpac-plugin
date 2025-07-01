@@ -25,27 +25,10 @@
 
 #pragma once
 
+#include "lib/memio.h"
+
 #include <gpac/filters.h>
 #include <gst/gst.h>
-
-typedef enum
-{
-  GPAC_FILTER_PP_RET_INVALID = 0,
-  GPAC_FILTER_PP_RET_VALID = 1,
-
-  // Return types that do not result in a buffer
-  GPAC_FILTER_PP_RET_EMPTY = ((1 << 1)),
-  GPAC_FILTER_PP_RET_ERROR = ((1 << 2)),
-  // If we get signal bit set, consumer will try to consume again until no
-  // consumers return this signal
-  GPAC_FILTER_PP_RET_SIGNAL = ((1 << 3)),
-
-  // Return types that result in a buffer
-  GPAC_MAY_HAVE_BUFFER = ((1 << 4)),
-  GPAC_FILTER_PP_RET_NULL = ((1 << 4) | GPAC_FILTER_PP_RET_VALID),
-  GPAC_FILTER_PP_RET_BUFFER = ((1 << 5) | GPAC_FILTER_PP_RET_VALID),
-  GPAC_FILTER_PP_RET_BUFFER_LIST = ((1 << 6) | GPAC_FILTER_PP_RET_VALID),
-} GPAC_FilterPPRet;
 
 #define GPAC_FILTER_PP_IMPL_DECL(filter_name)                               \
   void filter_name##_ctx_init(void** process_ctx);                          \

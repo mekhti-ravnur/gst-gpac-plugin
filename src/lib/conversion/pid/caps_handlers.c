@@ -27,13 +27,13 @@
 #include "gpacmessages.h"
 #include "lib/pid.h"
 
-#define CAPS_HANDLER_SIGNATURE(prop_nickname)                \
-  gboolean prop_nickname##_caps_handler(GPAC_PROP_IMPL_ARGS)
+#define CAPS_HANDLER_SIGNATURE(prop_nickname)                    \
+  gboolean prop_nickname##_caps_handler(GPAC_PID_PROP_IMPL_ARGS)
 
-#define DEFAULT_HANDLER(prop_nickname)                       \
-  gboolean prop_nickname##_caps_handler(GPAC_PROP_IMPL_ARGS) \
-  {                                                          \
-    return FALSE;                                            \
+#define DEFAULT_HANDLER(prop_nickname)                           \
+  gboolean prop_nickname##_caps_handler(GPAC_PID_PROP_IMPL_ARGS) \
+  {                                                              \
+    return FALSE;                                                \
   }
 
 #define GET_MEDIA_AND_CODEC                                             \

@@ -22,180 +22,13 @@
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  */
+
 #include "lib/pid.h"
+#include "conversion/pid/registry.h"
 #include "gpacmessages.h"
 
-//
-// Macros for declaring property handlers
-//
-
-#define GPAC_PROP_IMPL_DECL_CAPS(prop_nickname)               \
-  gboolean prop_nickname##_caps_handler(GPAC_PROP_IMPL_ARGS);
-
-#define GPAC_PROP_IMPL_DECL_TAGS(prop_nickname)               \
-  gboolean prop_nickname##_tags_handler(GPAC_PROP_IMPL_ARGS);
-
-#define GPAC_PROP_IMPL_DECL_SEGMENT(prop_nickname)               \
-  gboolean prop_nickname##_segment_handler(GPAC_PROP_IMPL_ARGS);
-
-#define GPAC_PROP_IMPL_DECL_QUERY(prop_nickname)               \
-  gboolean prop_nickname##_query_handler(GPAC_PROP_IMPL_ARGS);
-
-#define GPAC_PROP_IMPL_DECL_DEFAULT(prop_nickname)                          \
-  gboolean prop_nickname##_default_handler(GPAC_PROP_IMPL_ARGS_NO_ELEMENT);
-
-#define GPAC_PROP_IMPL_DECL_BUNDLE_ALL(prop_nickname) \
-  GPAC_PROP_IMPL_DECL_CAPS(prop_nickname)             \
-  GPAC_PROP_IMPL_DECL_TAGS(prop_nickname)             \
-  GPAC_PROP_IMPL_DECL_SEGMENT(prop_nickname)          \
-  GPAC_PROP_IMPL_DECL_QUERY(prop_nickname)            \
-  GPAC_PROP_IMPL_DECL_DEFAULT(prop_nickname)
-
-#define GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(prop_nickname) \
-  GPAC_PROP_IMPL_DECL_CAPS(prop_nickname)              \
-  GPAC_PROP_IMPL_DECL_DEFAULT(prop_nickname)
-
-#define GPAC_PROP_IMPL_DECL_BUNDLE_TAGS(prop_nickname) \
-  GPAC_PROP_IMPL_DECL_TAGS(prop_nickname)              \
-  GPAC_PROP_IMPL_DECL_DEFAULT(prop_nickname)
-
-#define GPAC_PROP_IMPL_DECL_BUNDLE_SEGMENT(prop_nickname) \
-  GPAC_PROP_IMPL_DECL_SEGMENT(prop_nickname)              \
-  GPAC_PROP_IMPL_DECL_DEFAULT(prop_nickname)
-
-//
-// Macros for declaring property handlers
-//
-
-#define GPAC_PROP_DEFINE_ALL(prop_4cc, prop_nickname) \
-  { prop_4cc,                                         \
-    prop_nickname##_caps_handler,                     \
-    prop_nickname##_tags_handler,                     \
-    prop_nickname##_segment_handler,                  \
-    prop_nickname##_query_handler,                    \
-    prop_nickname##_default_handler }
-
-#define GPAC_PROP_DEFINE_CAPS(prop_4cc, prop_nickname)    \
-  { prop_4cc, prop_nickname##_caps_handler,   NULL, NULL, \
-    NULL,     prop_nickname##_default_handler }
-
-#define GPAC_PROP_DEFINE_TAGS(prop_4cc, prop_nickname) \
-  { prop_4cc, NULL, prop_nickname##_tags_handler,      \
-    NULL,     NULL, prop_nickname##_default_handler }
-
-#define GPAC_PROP_DEFINE_SEGMENT(prop_4cc, prop_nickname) \
-  { prop_4cc, NULL,                                       \
-    NULL,     prop_nickname##_segment_handler,            \
-    NULL,     prop_nickname##_default_handler }
-
-#define GPAC_PROP_DEFINE_DEFAULT(prop_4cc, prop_nickname)               \
-  { prop_4cc, NULL, NULL, NULL, NULL, prop_nickname##_default_handler }
-
-/*!
-\brief PID Property Management and Reconfiguration
-
-The value of a PID property can be set through four sources:
-- Caps
-- Tags
-- Segment
-- Query
-
-If none of these sources set the property, the default handler is invoked. At
-least one of the sources must return `TRUE` for the property to be set.
-
-Properties can also be set using custom caps fields by prefixing the property
-name with `"gpac-"`. This approach is particularly useful for setting properties
-via tools like `gst-launch-1.0`. For a more structured approach, a nested
-structure with `"gpac"` as the field name can be used. These custom fields will
-override properties that would otherwise be set by GStreamer.
-
-Property handlers have access to private data for each pad, which can be used to
-store state information. Since the element's lock is acquired, the private data
-can be safely modified, and the global context can also be utilized if required
-by any property handler.
-
-For example, the `id` property must remain consistent across subsequent calls
-and must increment monotonically across all pads. This behavior is achieved by
-storing the last `id` in a global context.
-*/
-
-//
-// Property handler declarations
-//
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(stream_type)
-GPAC_PROP_IMPL_DECL_BUNDLE_TAGS(id)
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(codec_id)
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(unframed)
-
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(width)
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(height)
-
-GPAC_PROP_IMPL_DECL_BUNDLE_TAGS(dbsize)
-GPAC_PROP_IMPL_DECL_BUNDLE_TAGS(bitrate)
-GPAC_PROP_IMPL_DECL_BUNDLE_TAGS(max_bitrate)
-
-GPAC_PROP_IMPL_DECL_BUNDLE_ALL(duration)
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(timescale)
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(sample_rate)
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(fps)
-
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(num_channels)
-GPAC_PROP_IMPL_DECL_BUNDLE_TAGS(language)
-
-GPAC_PROP_IMPL_DECL_BUNDLE_CAPS(decoder_config)
-
-typedef struct
-{
-  u32 prop_4cc;
-
-  // Handlers
-  gboolean (*caps_handler)(GPAC_PROP_IMPL_ARGS);
-  gboolean (*tags_handler)(GPAC_PROP_IMPL_ARGS);
-  gboolean (*segment_handler)(GPAC_PROP_IMPL_ARGS);
-  gboolean (*query_handler)(GPAC_PROP_IMPL_ARGS);
-
-  // Default fallback handler
-  gboolean (*default_handler)(GPAC_PROP_IMPL_ARGS_NO_ELEMENT);
-} prop_registry_entry;
-
-static prop_registry_entry prop_registry[] = {
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_STREAM_TYPE, stream_type),
-  GPAC_PROP_DEFINE_TAGS(GF_PROP_PID_ID, id),
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_CODECID, codec_id),
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_UNFRAMED, unframed),
-
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_WIDTH, width),
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_HEIGHT, height),
-
-  GPAC_PROP_DEFINE_TAGS(GF_PROP_PID_DBSIZE, dbsize),
-  GPAC_PROP_DEFINE_TAGS(GF_PROP_PID_BITRATE, bitrate),
-  GPAC_PROP_DEFINE_TAGS(GF_PROP_PID_MAXRATE, max_bitrate),
-
-  // DO NOT change the order of the next 4 properties
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_SAMPLE_RATE, sample_rate),
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_FPS, fps),
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_TIMESCALE, timescale),
-  GPAC_PROP_DEFINE_ALL(GF_PROP_PID_DURATION, duration),
-
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_NUM_CHANNELS, num_channels),
-  GPAC_PROP_DEFINE_TAGS(GF_PROP_PID_LANGUAGE, language),
-
-  GPAC_PROP_DEFINE_CAPS(GF_PROP_PID_DECODER_CONFIG, decoder_config),
-};
-
-//
-// Helper macros
-//
-#define FLAG_SET(flag) ((priv->flags & flag) == flag)
-
-u32
-gpac_pid_get_num_supported_props()
-{
-  return G_N_ELEMENTS(prop_registry);
-}
-
 gboolean
-gpac_pid_apply_overrides(GPAC_PROP_IMPL_ARGS_NO_ELEMENT, GList** to_skip)
+gpac_pid_apply_overrides(GPAC_PID_PROP_IMPL_ARGS_NO_ELEMENT, GList** to_skip)
 {
   GstStructure* caps = gst_caps_get_structure(priv->caps, 0);
   gchar* prefix = "gpac-";
@@ -262,7 +95,7 @@ finish:
 }
 
 gboolean
-gpac_pid_reconfigure(GPAC_PROP_IMPL_ARGS)
+gpac_pid_reconfigure(GPAC_PID_PROP_IMPL_ARGS)
 {
   // Check arguments
   g_return_val_if_fail(element != NULL, FALSE);
@@ -274,7 +107,7 @@ gpac_pid_reconfigure(GPAC_PROP_IMPL_ARGS)
 
   // Go through overrides if caps are set
   g_autoptr(GList) to_skip = g_list_alloc();
-  if (FLAG_SET(GPAC_PAD_CAPS_SET)) {
+  if (HAS_FLAG(priv->flags, GPAC_PAD_CAPS_SET)) {
     if (!gpac_pid_apply_overrides(priv, pid, &to_skip)) {
       GST_ERROR_OBJECT(priv->self, "Failed to apply overrides");
       return FALSE;
@@ -291,17 +124,17 @@ gpac_pid_reconfigure(GPAC_PROP_IMPL_ARGS)
 
     // Try each handler
     if (entry->caps_handler != NULL)
-      if (FLAG_SET(GPAC_PAD_CAPS_SET) &&
+      if (HAS_FLAG(priv->flags, GPAC_PAD_CAPS_SET) &&
           entry->caps_handler(element, priv, pid))
         continue;
 
     if (entry->tags_handler != NULL)
-      if (FLAG_SET(GPAC_PAD_TAGS_SET) &&
+      if (HAS_FLAG(priv->flags, GPAC_PAD_TAGS_SET) &&
           entry->tags_handler(element, priv, pid))
         continue;
 
     if (entry->segment_handler != NULL)
-      if (FLAG_SET(GPAC_PAD_SEGMENT_SET) &&
+      if (HAS_FLAG(priv->flags, GPAC_PAD_SEGMENT_SET) &&
           entry->segment_handler(element, priv, pid))
         continue;
 

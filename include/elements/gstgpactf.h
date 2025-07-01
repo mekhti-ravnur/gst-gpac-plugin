@@ -29,7 +29,6 @@
 #include "gpacmessages.h"
 
 #include "lib/caps.h"
-#include "lib/filters/filters.h"
 #include "lib/main.h"
 #include "lib/memio.h"
 #include "lib/packet.h"

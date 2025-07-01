@@ -28,13 +28,13 @@
 #include "lib/pid.h"
 #include <gpac/iso639.h>
 
-#define TAGS_HANDLER_SIGNATURE(prop_nickname)                \
-  gboolean prop_nickname##_tags_handler(GPAC_PROP_IMPL_ARGS)
+#define TAGS_HANDLER_SIGNATURE(prop_nickname)                    \
+  gboolean prop_nickname##_tags_handler(GPAC_PID_PROP_IMPL_ARGS)
 
-#define DEFAULT_HANDLER(prop_nickname)                       \
-  gboolean prop_nickname##_tags_handler(GPAC_PROP_IMPL_ARGS) \
-  {                                                          \
-    return FALSE;                                            \
+#define DEFAULT_HANDLER(prop_nickname)                           \
+  gboolean prop_nickname##_tags_handler(GPAC_PID_PROP_IMPL_ARGS) \
+  {                                                              \
+    return FALSE;                                                \
   }
 
 //
