@@ -24,6 +24,8 @@
  */
 
 #include "lib/packet.h"
+#include "conversion/packet/registry.h"
+#include "utils.h"
 
 static void
 gpac_pck_destructor(GF_Filter* filter, GF_FilterPid* PID, GF_FilterPacket* pck)
@@ -87,6 +89,60 @@ fail:
                      GST_TIME_ARGS(time)),
                     (NULL));
   return 0;
+}
+
+void
+gpac_configure_video(GstBuffer* buffer,
+                     GpacPadPrivate* priv,
+                     GF_FilterPacket* packet)
+{
+  // Decide on sample dependency flags
+  gboolean is_delta =
+    GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+  gboolean is_droppable =
+    GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DROPPABLE);
+  gboolean is_discontinuity =
+    GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DISCONT);
+
+  // Set the SAP type for video streams
+  gf_filter_pck_set_sap(packet,
+                        is_delta ? GF_FILTER_SAP_NONE : GF_FILTER_SAP_1);
+
+  // Note that acceptance tests doesn't like SAP, is_leading, sample_depends_on
+  u32 flags = 0;
+
+  // is_leading
+  if (is_delta)
+    flags |= (priv->last_frame_was_keyframe ? 3 : 2) << 6;
+
+  // sample_depends_on
+  if (is_discontinuity)
+    flags |= 2 << 4;
+  else
+    flags |= ((is_delta ? 1 : 2) << 4);
+
+  flags |= ((is_droppable ? 2 : 1) << 2); // sample_is_depended_on
+  flags |= (2 << 0);                      // sample_has_redundancy
+
+  gf_filter_pck_set_dependency_flags(packet, flags);
+  priv->last_frame_was_keyframe = !is_delta;
+}
+
+void
+gpac_pck_prop_configure(GPAC_PCK_PROP_IMPL_ARGS)
+{
+  // Check arguments
+  g_return_if_fail(buffer != NULL);
+  g_return_if_fail(priv != NULL);
+  g_return_if_fail(pck != NULL);
+
+  // Go through the property registry
+  for (u32 i = 0; i < gpac_pck_get_num_supported_props(); i++) {
+    prop_registry_entry* entry = &prop_registry[i];
+
+    // Run the handler for the property
+    entry->handler(buffer, priv, pck);
+  }
 }
 
 GF_FilterPacket*
@@ -169,41 +225,13 @@ gpac_pck_new_from_buffer(GstBuffer* buffer,
     gf_filter_pid_get_property(pid, GF_PROP_PID_STREAM_TYPE);
   gboolean is_video = p_typ && p_typ->value.uint == GF_STREAM_VISUAL;
 
-  // For non-video streams, we're done
-  if (!is_video)
-    goto finish;
+  // For video streams, we need further configuration
+  if (is_video) {
+    gpac_configure_video(buffer, priv, packet);
+  }
 
-  // Decide on sample dependency flags
-  gboolean is_delta =
-    GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT);
-  gboolean is_droppable =
-    GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DROPPABLE);
-  gboolean is_discontinuity =
-    GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DISCONT);
+  // Configure the packet properties
+  gpac_pck_prop_configure(buffer, priv, packet);
 
-  // Set the SAP type for video streams
-  gf_filter_pck_set_sap(packet,
-                        is_delta ? GF_FILTER_SAP_NONE : GF_FILTER_SAP_1);
-
-  // Note that acceptance tests doesn't like SAP, is_leading, sample_depends_on
-  u32 flags = 0;
-
-  // is_leading
-  if (is_delta)
-    flags |= (priv->last_frame_was_keyframe ? 3 : 2) << 6;
-
-  // sample_depends_on
-  if (is_discontinuity)
-    flags |= 2 << 4;
-  else
-    flags |= ((is_delta ? 1 : 2) << 4);
-
-  flags |= ((is_droppable ? 2 : 1) << 2); // sample_is_depended_on
-  flags |= (2 << 0);                      // sample_has_redundancy
-
-  gf_filter_pck_set_dependency_flags(packet, flags);
-  priv->last_frame_was_keyframe = !is_delta;
-
-finish:
   return packet;
 }

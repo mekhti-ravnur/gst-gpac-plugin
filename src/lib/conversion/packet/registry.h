@@ -25,24 +25,43 @@
 
 #pragma once
 
-#include <gpac/filters.h>
-#include <gst/gst.h>
+#include "lib/packet.h"
 
-#include "lib/pid.h"
-#include "lib/time.h"
+//
+// Macros for declaring packet property handlers
+//
 
-#define GPAC_PCK_PROP_IMPL_ARGS_NO_ELEMENT   \
-  GpacPadPrivate *priv, GF_FilterPacket *pck
-#define GPAC_PCK_PROP_IMPL_ARGS                         \
-  GstBuffer *buffer, GPAC_PCK_PROP_IMPL_ARGS_NO_ELEMENT
+#define GPAC_PROP_IMPL_DECL(prop_nickname)                   \
+  gboolean prop_nickname##_handler(GPAC_PCK_PROP_IMPL_ARGS);
 
-/*! creates a new packet from the given buffer
-    \param[in] buffer the buffer to create the packet from
-    \param[in] priv the private data of the pad
-    \param[in] pid the pid to create the packet for
-    \return the new packet
-*/
-GF_FilterPacket*
-gpac_pck_new_from_buffer(GstBuffer* buffer,
-                         GpacPadPrivate* priv,
-                         GF_FilterPid* pid);
+//
+// Macros for declaring property handlers
+//
+
+#define GPAC_PROP_DEFINE(prop_4cc, prop_nickname) \
+  { prop_4cc, NULL, prop_nickname##_handler }
+
+#define GPAC_PROP_DEFINE_STR(prop_str, prop_nickname) \
+  { 0, prop_str, prop_nickname##_handler }
+
+//
+// Property handler declarations
+//
+GPAC_PROP_IMPL_DECL(id3);
+
+typedef struct
+{
+  u32 prop_4cc;
+  const gchar* prop_str;
+
+  gboolean (*handler)(GPAC_PCK_PROP_IMPL_ARGS);
+} prop_registry_entry;
+
+static prop_registry_entry prop_registry[] = { GPAC_PROP_DEFINE_STR("id3",
+                                                                    id3) };
+
+u32
+gpac_pck_get_num_supported_props()
+{
+  return G_N_ELEMENTS(prop_registry);
+}
