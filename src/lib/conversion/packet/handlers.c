@@ -25,7 +25,7 @@
 
 #include "lib/packet.h"
 
-#include <gpac/internal/id3.h>
+#include <gpac/id3.h>
 #include <gst/gst.h>
 
 gboolean
