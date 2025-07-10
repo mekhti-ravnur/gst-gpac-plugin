@@ -117,13 +117,8 @@ gst_gpac_sink_request_new_pad(GstElement* element,
     return NULL;
   }
 
-  // Decide the ghost pad name
-  gchar* actual_name = gst_pad_get_name(peer);
-  gchar* ghost_name = g_strdup_printf("ghost_%s", actual_name);
-  g_free(actual_name);
-
   // Create a ghost pad from the aggregator
-  pad = gst_ghost_pad_new_from_template(ghost_name, peer, templ);
+  pad = gst_ghost_pad_new_from_template(gst_pad_get_name(peer), peer, templ);
   gst_pad_set_active(pad, TRUE);
   gst_element_add_pad(element, pad);
   gst_object_unref(peer);
