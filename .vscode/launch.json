@@ -260,6 +260,7 @@
       "program": "${workspaceFolder}/build/tests/gstgpacplugin_test",
       "preLaunchTask": "build",
       "cwd": "/tmp",
+      "args": ["--gtest_filter='*'"],
       "environment": [
         {
           "name": "GST_PLUGIN_PATH",
