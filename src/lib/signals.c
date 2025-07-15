@@ -153,44 +153,20 @@ gpac_signal_try_emit(GstElement* element,
     GstGpacParams* params = GST_GPAC_GET_PARAMS(klass);
     guint* registered_signals = params->registered_signals;
 
-    GST_TRACE_OBJECT(parent,
-                     "Checking signal registration for id %s (%u)",
-                     gpac_signal_names[id - 1],
-                     id);
-
     // We may not have registered this signal
-    if (!registered_signals[id]) {
-      GST_TRACE_OBJECT(parent, "Signal id %u not registered", id);
+    if (!registered_signals[id])
       continue;
-    }
 
     guint signal_id = registered_signals[id];
-    GST_TRACE_OBJECT(parent,
-                     "Found registered signal id %u for %s (%u)",
-                     signal_id,
-                     gpac_signal_names[id - 1],
-                     id);
-
     if (signal_id) {
       if (output_stream) {
         *output_stream = NULL;
-        GST_TRACE_OBJECT(parent,
-                         "Emitting signal %s with location %s (output_stream)",
-                         gpac_signal_names[id - 1],
-                         location);
         g_signal_emit(parent, signal_id, 0, location, output_stream);
-        GST_TRACE_OBJECT(
-          parent, "Signal emitted, output_stream is %p", *output_stream);
         return (*output_stream != NULL);
       }
 
       gboolean deleted = FALSE;
-      GST_TRACE_OBJECT(parent,
-                       "Emitting signal %s with location %s (deleted)",
-                       gpac_signal_names[id - 1],
-                       location);
       g_signal_emit(parent, signal_id, 0, location, &deleted);
-      GST_TRACE_OBJECT(parent, "Signal emitted, deleted is %d", deleted);
       return deleted;
     }
   } while ((parent = gst_element_get_parent(parent)));

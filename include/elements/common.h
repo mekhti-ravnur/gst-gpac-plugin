@@ -187,6 +187,8 @@ typedef struct _GstGpacParams
  * available to instantiate
  */
 GType
-gst_gpac_tf_register_custom(subelement_info* se_info, gboolean is_inside_sink);
+gst_gpac_tf_register_custom(subelement_info* se_info,
+                            gboolean is_inside_sink,
+                            gboolean is_single);
 
 G_END_DECLS

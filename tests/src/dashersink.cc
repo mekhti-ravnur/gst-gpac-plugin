@@ -206,3 +206,45 @@ TEST_F(GstTestFixture, HLSMultiVariant)
 
   gf_sys_close();
 }
+
+TEST_F(GstTestFixture, HLSMultiVariantInSink)
+{
+  PipelineConfigurationMany cfg;
+  cfg.v_num_buffers = 30 * 10;
+  cfg.a_num_buffers = 48000 / 1024 * 10;
+
+  this->SetUpPipelineMany(cfg);
+  GstElement* gpachlssink = gst_element_factory_make_full("gpacsink",
+                                                          "graph",
+                                                          "dasher:segdur=2.0",
+                                                          "destination",
+                                                          "master.m3u8",
+                                                          NULL);
+
+  // Create signal handlers
+  SignalMemoryCapture capture;
+  capture.connect(gpachlssink, "get-manifest");
+  capture.connect(gpachlssink, "get-manifest-variant");
+  capture.connect(gpachlssink, "get-segment-init");
+  capture.connect(gpachlssink, "get-segment");
+
+  // Add the sink to the pipeline
+  gst_bin_add(GST_BIN(pipeline), gpachlssink);
+  // Link the elements
+  for (auto& encoder : GetEncoders()) {
+    if (!gst_element_link(encoder, gpachlssink)) {
+      g_error("Failed to link elements");
+      return;
+    }
+  }
+
+  GST_DEBUG_BIN_TO_DOT_FILE(
+    GST_BIN(pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "hls-multi-variant");
+
+  this->StartPipeline();
+  this->WaitForEOS();
+  capture.finish(gpachlssink);
+
+  // Check manifests
+  CHECK_MANIFEST_FILE(0);
+}

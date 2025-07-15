@@ -1232,7 +1232,9 @@ GST_ELEMENT_REGISTER_DEFINE_CUSTOM(gpac_tf, gst_gpac_tf_register);
 
 // #MARK: Private registration
 GType
-gst_gpac_tf_register_custom(subelement_info* se_info, gboolean is_inside_sink)
+gst_gpac_tf_register_custom(subelement_info* se_info,
+                            gboolean is_inside_sink,
+                            gboolean is_single)
 {
   const gchar* type_name =
     g_strdup_printf("GstGpacTransformPrivate%c%s",
@@ -1266,7 +1268,7 @@ gst_gpac_tf_register_custom(subelement_info* se_info, gboolean is_inside_sink)
           se_info);
 
   GstGpacParams* params = g_new0(GstGpacParams, 1);
-  params->is_single = TRUE;
+  params->is_single = is_single;
   params->is_inside_sink = is_inside_sink;
   params->info = se_info;
 

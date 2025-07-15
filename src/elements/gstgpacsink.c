@@ -163,14 +163,10 @@ gst_gpac_sink_instance_init(GstGpacSink* sink)
   // Treat the bin as a sink
   GST_OBJECT_FLAG_SET(sink, GST_ELEMENT_FLAG_SINK);
 
-  // Create the internal elements
-  if (params->is_single) {
-    // Create the transform element for the subelement
-    sink->tf = g_object_new(params->private_type, NULL);
-  } else {
-    // Create the regular transform element
-    sink->tf = gst_element_factory_make("gpactf", NULL);
-  }
+  // Create the transform element for the subelement
+  sink->tf = g_object_new(params->private_type, NULL);
+
+  // Create a fake sink element
   sink->sink = gst_element_factory_make("fakesink", NULL);
 
   // Add and link the elements
@@ -249,12 +245,23 @@ gst_gpac_sink_subclass_init(GstGpacSinkClass* klass)
     }
 
     // Register the internal element type
-    params->private_type = gst_gpac_tf_register_custom(params->info, TRUE);
+    params->private_type =
+      gst_gpac_tf_register_custom(params->info, TRUE, TRUE);
   } else {
     gpac_install_src_pad_templates(gstelement_class);
     gpac_install_local_properties(
       gobject_class, GPAC_PROP_GRAPH, GPAC_PROP_DESTINATION, GPAC_PROP_0);
     gpac_install_all_signals(gobject_class);
+
+    // We need an internal version of the transform element
+    params->info = g_new0(subelement_info, 1);
+    const subelement_info internal_element =
+      GPAC_TF_SUBELEMENT("internal", NULL, NULL);
+    memcpy(params->info, &internal_element, sizeof(subelement_info));
+
+    // Register the internal element type
+    params->private_type =
+      gst_gpac_tf_register_custom(params->info, TRUE, FALSE);
   }
 
   // Set the metadata
