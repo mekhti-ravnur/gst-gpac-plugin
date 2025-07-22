@@ -14,7 +14,6 @@ project(gpac_plugin VERSION 0.2.1 LANGUAGES C) # x-release-please-version
 
 # Options
 option(ENABLE_TESTS "Enable and build tests" OFF)
-option(PACKAGE "Package the plugin" OFF)
 
 # Set default build type to Release
 if(NOT CMAKE_BUILD_TYPE)
@@ -23,13 +22,6 @@ endif()
 
 # Define allowed values for CMAKE_BUILD_TYPE
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release)
-
-# Check if we are packaging
-if(PACKAGE)
-  message(STATUS "Building for packaging ")
-  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (e.g., Debug, Release)" FORCE)
-  set(ENABLE_TESTS OFF CACHE BOOL "Disable tests for packaging" FORCE)
-endif()
 
 # clang-tidy
 find_program(CLANG_TIDY NAMES clang-tidy)
@@ -168,9 +160,17 @@ set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 
 set(CPACK_DEBIAN_PACKAGE_SECTION "libs")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libgstreamer1.0-0, libgstreamer-plugins-base1.0-0")
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 
-if(PACKAGE)
-  message(STATUS "Packaging the plugin")
-  include(CPack)
-endif()
+# Always include CPack for packaging functionality
+include(CPack)
+
+# Create a custom package target that applies packaging conditions
+add_custom_target(release_package
+  COMMAND ${CMAKE_COMMAND} -E echo "Building for packaging"
+  COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR}
+  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target all
+  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package
+  COMMENT "Building with packaging conditions (Release mode, no tests) and creating package"
+  VERBATIM
+)
