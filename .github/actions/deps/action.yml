@@ -11,44 +11,25 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Retrieve gpac HEAD commit
-      id: gpac-commit
+    - name: Install GPAC on Linux
       shell: bash
+      if: runner.os == 'Linux'
       run: |
-        head_sha=$(git ls-remote https://github.com/gpac/gpac.git HEAD | awk '{ print $1 }')
-        echo "gpac-commit=$head_sha" >> $GITHUB_OUTPUT
+        sudo install -m 0755 -d /etc/apt/keyrings
+        sudo curl -fsSL https://dist.gpac.io/gpac/linux/gpg.asc | \
+          gpg --dearmor | sudo tee /etc/apt/keyrings/gpac.gpg > /dev/null
+        sudo chmod a+r /etc/apt/keyrings/gpac.gpg
 
-    - name: Cache gpac
-      id: cache-gpac
-      uses: actions/cache@v4
-      with:
-        path: ${{ runner.temp }}/gpac
-        key: gpac-${{ runner.os }}-${{ runner.arch }}-${{ steps.gpac-commit.outputs.gpac-commit }}
-        restore-keys: |
-          gpac-${{ runner.os }}-${{ runner.arch }}
-
-    - name: Clone gpac
-      if: steps.cache-gpac.outputs.cache-hit != 'true'
+        echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/gpac.gpg] https://dist.gpac.io/gpac/linux/ubuntu/ \
+          $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") nightly" | \
+          sudo tee /etc/apt/sources.list.d/gpac.list > /dev/null
+        sudo apt-get update
+        sudo apt-get install -y libgpac-dev
+    - name: Install GPAC on macOS
       shell: bash
-      working-directory: ${{ runner.temp }}
-      run: |
-        if [ -d gpac ]; then
-          cd gpac
-          git clean -fdx
-          git pull
-        else
-          git clone --depth 1 https://github.com/gpac/gpac.git
-        fi
-
-    - name: Compile gpac
-      working-directory: ${{ runner.temp }}/gpac
-      shell: bash
-      run: ./configure && make -j
-
-    - name: Install gpac
-      working-directory: ${{ runner.temp }}/gpac
-      shell: bash
-      run: sudo make install
+      if: runner.os == 'macOS'
+      run: brew install --head gpac
 
     - name: Install GStreamer on Linux
       shell: bash
