@@ -157,13 +157,17 @@ gpac_install_filter_properties(GObjectClass* gobject_class,
   GF_FilterSession* session = gf_fs_new_defaults(0u);
   guint num_filters = gf_fs_filters_registers_count(session);
 
+  // Get the list seperator
+  GF_Err e;
+  GF_Filter* dummy = gf_fs_new_filter(session, "dummy", 0, &e);
+  char sep_list = (char)gf_filter_get_sep(dummy, GF_FS_SEP_LIST);
+
   const GF_FilterRegister* filter;
   for (guint i = 0; i < num_filters; i++) {
     filter = gf_fs_get_filter_register(session, i);
     if (!g_strcmp0(filter->name, filter_name))
       break;
-    else
-      filter = NULL;
+    filter = NULL;
   }
   gf_fs_del(session);
   g_assert(filter);
@@ -206,33 +210,49 @@ gpac_install_filter_properties(GObjectClass* gobject_class,
       goto skip;
     }
 
+    // Parse the default value
+    const GF_PropertyValue p =
+      gf_props_parse_value(filter->args[option_idx].arg_type,
+                           filter->args[option_idx].arg_name,
+                           filter->args[option_idx].arg_default_val,
+                           filter->args[option_idx].min_max_enum,
+                           sep_list);
+
     // Register the option
     switch (filter->args[option_idx].arg_type) {
       case GF_PROP_SINT:
-        SPEC_INSTALL(int, 0, G_MAXINT, 0);
+        SPEC_INSTALL(int, G_MININT, G_MAXINT, p.value.sint);
         break;
       case GF_PROP_UINT:
-        SPEC_INSTALL(uint, 0, G_MAXUINT, 0);
+        SPEC_INSTALL(uint, 0, G_MAXUINT, (guint)p.value.uint);
         break;
       case GF_PROP_LSINT:
-        SPEC_INSTALL(int64, 0, G_MAXINT64, 0);
+        SPEC_INSTALL(int64, G_MININT64, G_MAXINT64, (gint64)p.value.longsint);
         break;
       case GF_PROP_LUINT:
-        SPEC_INSTALL(uint64, 0, G_MAXUINT64, 0);
+        SPEC_INSTALL(uint64, 0, G_MAXUINT64, (guint64)p.value.longuint);
         break;
       case GF_PROP_FLOAT:
-      case GF_PROP_FRACTION:
-        SPEC_INSTALL(float, 0.0, G_MAXFLOAT, 0.0);
+      case GF_PROP_FRACTION: {
+        gfloat fval = 0.0F;
+        if (p.value.lfrac.den != 0)
+          fval = (gfloat)p.value.frac.num / (gfloat)p.value.frac.den;
+        SPEC_INSTALL(float, -G_MAXFLOAT, G_MAXFLOAT, fval);
         break;
+      }
       case GF_PROP_DOUBLE:
-      case GF_PROP_FRACTION64:
-        SPEC_INSTALL(double, 0.0, G_MAXDOUBLE, 0.0);
+      case GF_PROP_FRACTION64: {
+        gdouble dval = 0.0;
+        if (p.value.lfrac.den != 0)
+          dval = (gdouble)p.value.lfrac.num / (gdouble)p.value.lfrac.den;
+        SPEC_INSTALL(double, -G_MAXDOUBLE, G_MAXDOUBLE, dval);
         break;
+      }
       case GF_PROP_BOOL:
-        SPEC_INSTALL(boolean, FALSE);
+        SPEC_INSTALL(boolean, p.value.boolean);
         break;
       case GF_PROP_STRING:
-        SPEC_INSTALL(string, filter->args[option_idx].arg_default_val);
+        SPEC_INSTALL(string, p.value.string);
         break;
       default:
         SPEC_INSTALL(string, NULL);
