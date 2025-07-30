@@ -63,6 +63,7 @@ gpac_install_sink_pad_templates(GstElementClass* klass)
   }
   gst_element_class_add_pad_template(klass, sink_templates[TEMPLATE_AUDIO]);
 
+#if 0 // FIXME: Subtitle and caption support has not been tested yet
   // Subtitle pad template
   if (sink_templates[TEMPLATE_SUBTITLE] == NULL) {
     sink_templates[TEMPLATE_SUBTITLE] = gst_pad_template_new(
@@ -82,6 +83,7 @@ gpac_install_sink_pad_templates(GstElementClass* klass)
       gst_static_caps_get(&gst_gpac_sink_formats.caption_caps));
   }
   gst_element_class_add_pad_template(klass, sink_templates[TEMPLATE_CAPTION]);
+#endif
 }
 
 GstStaticPadTemplate gst_gpac_src_template =
