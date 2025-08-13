@@ -26,10 +26,43 @@
 #include "lib/main.h"
 #include "gpacmessages.h"
 
+static void
+gpac_log_callback(void* cbck,
+                  GF_LOG_Level log_level,
+                  GF_LOG_Tool log_tool,
+                  const char* fmt,
+                  va_list vlist)
+{
+  GstElement* element = (GstElement*)cbck;
+
+  char msg[1024];
+  vsnprintf(msg, sizeof(msg), fmt, vlist);
+
+  switch (log_level) {
+    case GF_LOG_ERROR:
+      GST_ERROR_OBJECT(element, "%s", msg);
+      break;
+    case GF_LOG_WARNING:
+      GST_WARNING_OBJECT(element, "%s", msg);
+      break;
+    case GF_LOG_INFO:
+      GST_INFO_OBJECT(element, "%s", msg);
+      break;
+    case GF_LOG_DEBUG:
+      GST_DEBUG_OBJECT(element, "%s", msg);
+      break;
+    default:
+      GST_LOG_OBJECT(element, "%s", msg);
+      break;
+  }
+}
+
 gboolean
-gpac_init(GPAC_Context* ctx)
+gpac_init(GPAC_Context* ctx, GstElement* element)
 {
   gpac_return_val_if_fail(gf_sys_init(GF_MemTrackerNone, NULL), FALSE);
+  gf_log_set_callback(element, gpac_log_callback);
+  gf_log_set_tools_levels("all@warning:strict", GF_TRUE);
   return TRUE;
 }
 

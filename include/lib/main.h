@@ -36,10 +36,11 @@ typedef struct
 
 /*! initializes a gpac context
     \param[in] ctx the gpac context to initialize
+    \param[in] element the GstElement that will use this context
     \return TRUE if the context was initialized successfully, FALSE otherwise
 */
 gboolean
-gpac_init(GPAC_Context* ctx);
+gpac_init(GPAC_Context* ctx, GstElement* element);
 
 /*! destroys a gpac context
     \param[in] ctx the gpac context to destroy

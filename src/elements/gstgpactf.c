@@ -879,7 +879,7 @@ gst_gpac_tf_start(GstAggregator* aggregator)
     return FALSE;
   }
   // Initialize the GPAC context
-  if (!gpac_init(GPAC_CTX)) {
+  if (!gpac_init(GPAC_CTX, element)) {
     GST_ELEMENT_ERROR(
       element, LIBRARY, INIT, (NULL), ("Failed to initialize GPAC context"));
     return FALSE;
