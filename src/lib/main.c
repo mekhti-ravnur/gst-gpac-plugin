@@ -33,6 +33,16 @@ gpac_log_callback(void* cbck,
                   const char* fmt,
                   va_list vlist)
 {
+  /* Define a custom log category for GPAC */
+  static GstDebugCategory* gpac_cat = NULL;
+  if (G_UNLIKELY(gpac_cat == NULL)) {
+    gpac_cat = _gst_debug_get_category("gpac");
+    if (gpac_cat == NULL) {
+      gpac_cat =
+        _gst_debug_category_new("gpac", 0, "GPAC GStreamer integration");
+    }
+  }
+
   GstElement* element = (GstElement*)cbck;
 
   char msg[1024];
@@ -40,19 +50,19 @@ gpac_log_callback(void* cbck,
 
   switch (log_level) {
     case GF_LOG_ERROR:
-      GST_ERROR_OBJECT(element, "%s", msg);
+      GST_CAT_ERROR_OBJECT(gpac_cat, element, "%s", msg);
       break;
     case GF_LOG_WARNING:
-      GST_WARNING_OBJECT(element, "%s", msg);
+      GST_CAT_WARNING_OBJECT(gpac_cat, element, "%s", msg);
       break;
     case GF_LOG_INFO:
-      GST_INFO_OBJECT(element, "%s", msg);
+      GST_CAT_INFO_OBJECT(gpac_cat, element, "%s", msg);
       break;
     case GF_LOG_DEBUG:
-      GST_DEBUG_OBJECT(element, "%s", msg);
+      GST_CAT_DEBUG_OBJECT(gpac_cat, element, "%s", msg);
       break;
     default:
-      GST_LOG_OBJECT(element, "%s", msg);
+      GST_CAT_LOG_OBJECT(gpac_cat, element, "%s", msg);
       break;
   }
 }
@@ -62,7 +72,7 @@ gpac_init(GPAC_Context* ctx, GstElement* element)
 {
   gpac_return_val_if_fail(gf_sys_init(GF_MemTrackerNone, NULL), FALSE);
   gf_log_set_callback(element, gpac_log_callback);
-  gf_log_set_tools_levels("all@warning:strict", GF_TRUE);
+  gf_log_set_tools_levels("all@debug", GF_TRUE);
   return TRUE;
 }
 
