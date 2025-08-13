@@ -619,6 +619,7 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
   GstIterator* pad_iter;
   GValue item = G_VALUE_INIT;
   gboolean done = FALSE;
+  gboolean has_buffers = TRUE;
 
   // Check and create PIDs if necessary
   if (!gpac_prepare_pids(GST_ELEMENT(agg))) {
@@ -631,93 +632,102 @@ gst_gpac_tf_aggregate(GstAggregator* agg, gboolean timeout)
   // Create the temporary queue
   GQueue* queue = g_queue_new();
 
-  // Iterate over the pads
-  pad_iter = gst_element_iterate_sink_pads(GST_ELEMENT(agg));
-  while (!done) {
-    switch (gst_iterator_next(pad_iter, &item)) {
-      case GST_ITERATOR_OK: {
-        GF_FilterPid* pid = NULL;
-        GstPad* pad = g_value_get_object(&item);
-        GpacPadPrivate* priv = gst_pad_get_element_private(pad);
-        GstBuffer* buffer =
-          gst_aggregator_pad_pop_buffer(GST_AGGREGATOR_PAD(pad));
+  // Keep consuming buffers until all pads are drained
+  while (has_buffers) {
+    has_buffers = FALSE;
+    done = FALSE;
 
-        // Continue if no buffer is available
-        if (!buffer) {
-          GST_DEBUG_OBJECT(
-            agg, "No buffer available on pad %s", GST_PAD_NAME(pad));
-          goto next;
-        }
+    // Iterate over the pads
+    pad_iter = gst_element_iterate_sink_pads(GST_ELEMENT(agg));
+    while (!done) {
+      switch (gst_iterator_next(pad_iter, &item)) {
+        case GST_ITERATOR_OK: {
+          GF_FilterPid* pid = NULL;
+          GstPad* pad = g_value_get_object(&item);
+          GpacPadPrivate* priv = gst_pad_get_element_private(pad);
+          GstBuffer* buffer =
+            gst_aggregator_pad_pop_buffer(GST_AGGREGATOR_PAD(pad));
 
-        // Skip droppable/gap buffers
-        if (GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_GAP)) {
-          GST_DEBUG_OBJECT(
-            agg, "Gap buffer received on pad %s", GST_PAD_NAME(pad));
-          goto next;
-        }
-
-        // Send the key frame request
-        // Only send IDR request for video pads
-        if (gst_pad_get_pad_template(pad) ==
-            gst_gpac_get_sink_template(TEMPLATE_VIDEO)) {
-          gst_gpac_request_idr(agg, pad, buffer);
-        }
-
-        // Get the PID
-        g_object_get(GST_AGGREGATOR_PAD(pad), "pid", &pid, NULL);
-        g_assert(pid);
-
-        // Create the packet
-        GF_FilterPacket* packet = gpac_pck_new_from_buffer(buffer, priv, pid);
-        if (!packet) {
-          GST_ELEMENT_ERROR(agg,
-                            STREAM,
-                            FAILED,
-                            (NULL),
-                            ("Failed to create packet from buffer"));
-          goto next;
-        }
-
-        // Enqueue the packet
-        g_queue_push_tail(queue, packet);
-
-        // Select the highest PTS for sync buffer
-        gboolean is_video_pad = gst_pad_get_pad_template(GST_PAD(pad)) ==
-                                gst_gpac_get_sink_template(TEMPLATE_VIDEO);
-        gboolean is_only_pad = g_list_length(GST_ELEMENT(agg)->sinkpads) == 1;
-        if (is_video_pad || is_only_pad) {
-          if (gpac_tf->sync_buffer) {
-            guint64 current_pts = GST_BUFFER_PTS(buffer);
-            guint64 sync_pts = GST_BUFFER_PTS(gpac_tf->sync_buffer);
-            if (current_pts > sync_pts) {
-              gst_buffer_replace(&gpac_tf->sync_buffer, buffer);
-            }
-          } else {
-            // If no sync buffer exists, create one
-            gpac_tf->sync_buffer = gst_buffer_ref(buffer);
+          // Continue if no buffer is available
+          if (!buffer) {
+            GST_DEBUG_OBJECT(
+              agg, "No buffer available on pad %s", GST_PAD_NAME(pad));
+            goto next;
           }
-        }
 
-      next:
-        if (buffer)
-          gst_buffer_unref(buffer);
-        g_value_reset(&item);
-        break;
+          // We found at least one buffer, continue the outer loop
+          has_buffers = TRUE;
+
+          // Skip droppable/gap buffers
+          if (GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_GAP)) {
+            GST_DEBUG_OBJECT(
+              agg, "Gap buffer received on pad %s", GST_PAD_NAME(pad));
+            goto next;
+          }
+
+          // Send the key frame request
+          // Only send IDR request for video pads
+          if (gst_pad_get_pad_template(pad) ==
+              gst_gpac_get_sink_template(TEMPLATE_VIDEO)) {
+            gst_gpac_request_idr(agg, pad, buffer);
+          }
+
+          // Get the PID
+          g_object_get(GST_AGGREGATOR_PAD(pad), "pid", &pid, NULL);
+          g_assert(pid);
+
+          // Create the packet
+          GF_FilterPacket* packet = gpac_pck_new_from_buffer(buffer, priv, pid);
+          if (!packet) {
+            GST_ELEMENT_ERROR(agg,
+                              STREAM,
+                              FAILED,
+                              (NULL),
+                              ("Failed to create packet from buffer"));
+            goto next;
+          }
+
+          // Enqueue the packet
+          g_queue_push_tail(queue, packet);
+
+          // Select the highest PTS for sync buffer
+          gboolean is_video_pad = gst_pad_get_pad_template(GST_PAD(pad)) ==
+                                  gst_gpac_get_sink_template(TEMPLATE_VIDEO);
+          gboolean is_only_pad = g_list_length(GST_ELEMENT(agg)->sinkpads) == 1;
+          if (is_video_pad || is_only_pad) {
+            if (gpac_tf->sync_buffer) {
+              guint64 current_pts = GST_BUFFER_PTS(buffer);
+              guint64 sync_pts = GST_BUFFER_PTS(gpac_tf->sync_buffer);
+              if (current_pts > sync_pts) {
+                gst_buffer_replace(&gpac_tf->sync_buffer, buffer);
+              }
+            } else {
+              // If no sync buffer exists, create one
+              gpac_tf->sync_buffer = gst_buffer_ref(buffer);
+            }
+          }
+
+        next:
+          if (buffer)
+            gst_buffer_unref(buffer);
+          g_value_reset(&item);
+          break;
+        }
+        case GST_ITERATOR_RESYNC:
+          gst_iterator_resync(pad_iter);
+          GST_ELEMENT_WARNING(agg,
+                              STREAM,
+                              FAILED,
+                              (NULL),
+                              ("Data structure changed during pad iteration, "
+                               "discarding all packets"));
+          g_queue_clear_full(queue, (GDestroyNotify)gf_filter_pck_unref);
+          break;
+        case GST_ITERATOR_ERROR:
+        case GST_ITERATOR_DONE:
+          done = TRUE;
+          break;
       }
-      case GST_ITERATOR_RESYNC:
-        gst_iterator_resync(pad_iter);
-        GST_ELEMENT_WARNING(agg,
-                            STREAM,
-                            FAILED,
-                            (NULL),
-                            ("Data structure changed during pad iteration, "
-                             "discarding all packets"));
-        g_queue_clear_full(queue, (GDestroyNotify)gf_filter_pck_unref);
-        break;
-      case GST_ITERATOR_ERROR:
-      case GST_ITERATOR_DONE:
-        done = TRUE;
-        break;
     }
   }
 
