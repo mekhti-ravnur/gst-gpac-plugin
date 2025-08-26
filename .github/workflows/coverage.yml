@@ -50,6 +50,14 @@ jobs:
           GST_DEBUG: 3
         run: cmake --build build -j -t coverage_report
 
+      - name: Get coverage statistics
+        shell: bash
+        working-directory: build/coverage
+        run: |
+          lcov --summary coverage.filtered.info | \
+          sed -n -E 's/.*lines.*: ([0-9.]+)%.*/{"lines": \1}/p; s/.*functions.*: ([0-9.]+)%.*/{"functions": \1}/p' | \
+          jq -s 'add' > ${{ github.workspace }}/coverage/coverage.json
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 

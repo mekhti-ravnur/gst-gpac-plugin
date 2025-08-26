@@ -2,6 +2,7 @@
 
 ![GitHub Release](https://img.shields.io/github/v/release/gpac/gst-gpac-plugin?style=for-the-badge)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/gpac/gst-gpac-plugin/test.yml?style=for-the-badge&label=tests)
+![Coverage (lines)](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgpac.github.io%2Fgst-gpac-plugin%2Fcoverage.json&query=%24.lines&suffix=%25%20lines%20hit&style=for-the-badge&label=Coverage&color=green&link=https%3A%2F%2Fgpac.github.io%2Fgst-gpac-plugin)
 
 This plugin provides elements that interface with the GPAC library, bringing advanced multimedia processing capabilities of GPAC to GStreamer pipelines.
 
