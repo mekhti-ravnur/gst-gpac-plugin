@@ -47,6 +47,9 @@ gpac_log_callback(void* cbck,
 
   char msg[1024];
   vsnprintf(msg, sizeof(msg), fmt, vlist);
+  size_t len = strlen(msg);
+  if (len > 0 && msg[len - 1] == '\n')
+    msg[len - 1] = '\0';
 
   switch (log_level) {
     case GF_LOG_ERROR:
