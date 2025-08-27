@@ -134,7 +134,7 @@ if(ENABLE_COVERAGE)
     message(WARNING "lcov and/or genhtml not found, coverage report target will not be created")
   else()
     # Add coverage report target
-    add_custom_target(coverage_report ALL
+    add_custom_target(coverage_report
       DEPENDS ${PROJECT_NAME} gstgpacplugin_test
       COMMAND ${CMAKE_COMMAND} -E env "GST_PLUGIN_PATH=${CMAKE_BINARY_DIR}/lib:$ENV{GST_PLUGIN_PATH}" ./tests/gstgpacplugin_test
       COMMAND ${CMAKE_COMMAND} -E make_directory coverage
